@@ -1,25 +1,23 @@
-# ZeroStack — Deterministic O(1) Zigbee 3.0 / PRO R23 Radio Stack (`Release Zero (0.9.9-beta.1)`)
+# ZeroStack — Deterministic O(1) Zigbee 3.0 / PRO R23 Radio Stack (`Release Zero`)
 
 > **Official ZeroStack Overview & Firmware**: https://smlight.tech/software/zerostack
 > **Interactive Web Log Analyzer**: https://smlight-tech.github.io/zerostack/
+> **Log Analyzer (Bug Report Mode)**: https://smlight-tech.github.io/zerostack/?mode=bug-report
+> **GitHub Bug Report Form**: https://github.com/smlight-tech/zerostack/issues/new?template=bug_report.yml
 > **Technical Whitepaper Part 1 (PDF)**: https://smlight-tech.github.io/zerostack/whitepapers/zerostack-whitepaper-part-1.pdf
-> **Release**: Release Zero (`0.9.9-beta.1`) (version `0.9.9-beta.1`)
-> **Supported Silicon**: TI SimpleLink F2 (`CC2652P`, `CC2652P7`, `CC1352P7`, `CC2674P10`) across SMLIGHT `SLZB-06` and `SLZB-07` series coordinators.
+> **Release**: Release Zero (Public Beta)
+> **Supported Silicon**: TI SimpleLink F2 (`CC2652P`, `CC2652P7`, `CC1352P7`, `CC2674P10`) across SMLIGHT `SLZB-06`, `SLZB-07`, `SLZB-MR*`, and `SLZB-Ultima` series coordinators.
 
-ZeroStack is a ground-up, deterministic $O(1)$ Zigbee 3.0 / PRO R23 Coordinator & Router runtime engine engineered for SMLIGHT `SLZB-06` and `SLZB-07` series coordinators. It replaces legacy 2006-era OSAL/Z-Stack (`ZNP 3.x`) firmware with a DMA-driven UART transport (`115200` baud standard UART configuration), $O(1)$ in-RAM security with idempotent NVM state deduplication, a constant-time $O(1)$ memory manager (`218` cycles), and bounded per-child indirect queue quota isolation with zero flash-read stalls during sleepy poll windows.
+ZeroStack is a ground-up, deterministic $O(1)$ Zigbee 3.0 / PRO R23 Coordinator & Router runtime engine engineered for SMLIGHT `SLZB-06`, `SLZB-07`, `SLZB-MR*`, and `SLZB-Ultima` series coordinators. It replaces legacy 2006-era OSAL/Z-Stack (`ZNP 3.x`) firmware with a DMA-driven UART transport, $O(1)$ in-RAM security with idempotent NVM state deduplication, a constant-time $O(1)$ memory manager (`218` cycles), and bounded per-child indirect queue quota isolation with zero flash-read stalls during sleepy poll windows. ZeroStack is drop-in compatible with Zigbee2MQTT (`adapter: zstack`) and Home Assistant ZHA coordinator backups (`coordinator_backup.json` / ZHA backup) without re-pairing devices.
 
-## Supported Hardware — Release Zero (`0.9.9-beta.1`)
+## Supported Hardware — Release Zero
 
-All models run **Zigbee 3.0 / PRO R23 Coordinator & Router** firmware with a **DMA-Driven UART (`115200` baud)**:
-- **`SLZB-06`**: `TI CC2652P` (`88 KB` SRAM, `352 KB` Flash, no RTS/CTS)
-- **`SLZB-06U`**: `TI CC2652P` (`88 KB` SRAM, `352 KB` Flash, hardware RTS/CTS)
-- **`SLZB-06P7`** / **`SLZB-06P7v1`**: `TI CC2652P7` / `CC1352P7` (`144 KB` SRAM, `704 KB` Flash, no RTS/CTS)
-- **`SLZB-06P7U`**: `TI CC2652P7` / `CC1352P7` (`144 KB` SRAM, `704 KB` Flash, hardware RTS/CTS)
-- **`SLZB-07P7`**: `TI CC2652P7` (`144 KB` SRAM, `704 KB` Flash, USB dongle, no RTS/CTS)
-- **`SLZB-06P10`**: `TI CC2674P10` (`256 KB` SRAM, `1024 KB` Flash, hardware RTS/CTS)
-- **`SLZB-07P10`**: `TI CC2674P10` (`256 KB` SRAM, `1024 KB` Flash, USB dongle, no RTS/CTS)
+All models run **Zigbee 3.0 / PRO R23 Coordinator & Router** firmware with a **DMA-Driven UART** (including `U` variants):
+- **`TI CC2652P`** (`88 KB` SRAM, `352 KB` Flash): **`SLZB-06`**, **`SLZB-MR2`**
+- **`TI CC2652P7` / `CC1352P7`** (`144 KB` SRAM, `704 KB` Flash): **`SLZB-06P7`**, **`SLZB-07P7`**, **`SLZB-MR1`**
+- **`TI CC2674P10`** (`256 KB` SRAM, `1024 KB` Flash): **`SLZB-06P10`**, **`SLZB-07P10`**, **`SLZB-MR3`**, **`SLZB-MR4`**, **`SLZB-MRW10`**, **`SLZB-Ultima`**
 
-*(Note: Silicon Labs `EFR32MG21` / `EFR32MG24` diagnostic rules are provided for cross-vendor troubleshooting; ZeroStack `Release Zero (0.9.9-beta.1)` ships on SMLIGHT TI SimpleLink F2 coordinators while EFR32 support is in active development.)*
+*(Note: Silicon Labs `EFR32MG21` / `EFR32MG24` diagnostic rules are provided for cross-vendor troubleshooting; ZeroStack `Release Zero` ships on SMLIGHT TI SimpleLink F2 coordinators while EFR32 support is in active development.)*
 
 ## Verified Hardware Validation Benchmarks (`TI CC1352P7` @ `48.0 MHz`, `DWT->CYCCNT`, `1 µs = 48 cycles`)
 
@@ -35,7 +33,7 @@ All models run **Zigbee 3.0 / PRO R23 Coordinator & Router** firmware with a **D
 - **Dynamic Memory Allocation (`malloc` @ `k=64` heap holes)**: Legacy `2,550` cycles vs. ZeroStack **`218` cycles ($O(1)$ constant time)** — **11.7× faster**.
 - **Timer Start Latency (`T=39` active timers, 64 heap holes)**: Legacy `10,034` cycles (`209.0 µs`) vs. ZeroStack **`1,448` cycles (`30.2 µs`, heap-independent)** — **6.9× faster**.
 - **Inter-Task Event Enqueue (`msgSend`, `Q=64` queued events)**: Legacy `935` cycles vs. ZeroStack **`322` cycles ($O(1)$ flat)** — **2.9× faster**.
-- **Host Serial Round-Trip (`SYS_PING` at `115,200` baud)**: ZeroStack achieves **53% fewer total cycles**; reply path **83% fewer cycles**; 240-byte frames: `24,404` vs **`12,784` cycles (48% fewer)**.
+- **Host Serial Round-Trip (`SYS_PING`)**: ZeroStack achieves **53% fewer total cycles**; reply path **83% fewer cycles**; 240-byte frames: `24,404` vs **`12,784` cycles (48% fewer)**.
 
 ### Part 2: Adversarial Resilience & Fault Recovery
 - **Malformed Secured OTA Frames (12 NWK/APS classes + 3,255 MAC boundary vectors)**: Legacy suffers a **deterministic remote CPU frame processing fault (`unhandled exception`)** and accepts malformed routing headers (`144,127` cycles). ZeroStack achieves **`0` crashes across all 12 classes** (`320–6,631` cycles rejection; `790` cycles / `16 µs` on malformed routing headers — **9.8× to 402× lower CPU cost**).
