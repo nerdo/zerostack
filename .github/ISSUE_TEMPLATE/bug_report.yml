@@ -64,7 +64,7 @@ body:
     attributes:
       label: ZeroStack firmware version
       description: As shown in the SLZB web UI or the Log Analyzer summary table.
-      placeholder: 0.9.10-beta.2 (20261113)
+      placeholder: 0.9.10-beta.2 (20260101)
     validations:
       required: true
   - type: input
