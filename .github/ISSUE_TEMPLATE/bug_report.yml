@@ -1,0 +1,102 @@
+name: Bug report
+description: Report a ZeroStack coordinator problem with a scrubbed log trace from the Log Analyzer
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Before you file
+        Most reports need the ZNP/MT commands that ran **before** the error, not only the last stack-trace line.
+
+        **1. Enable debug logging and reproduce the problem once**
+        - Zigbee2MQTT: set `advanced: log_level: debug` in `configuration.yaml` (or start with `DEBUG=zigbee-herdsman*`), restart, reproduce, then download the log.
+        - ZHA: add `zigpy_znp: debug` under `logger: logs:` in Home Assistant, reproduce, then download the full log.
+
+        **2. Open the [Log Analyzer in Bug Report Mode](https://smlight-tech.github.io/zerostack/?mode=bug-report)** and drop the log file on it.
+        It runs entirely in your browser and **automatically scrubs all network and link keys** (they become `<KEY:…>` tags), masks the middle bytes of IEEE addresses, shortens file paths, and extracts the exact command trace before each fault.
+        Click **Copy for GitHub** and paste the result below.
+
+        Never paste a raw `coordinator_backup.json`, `configuration.yaml` or unscrubbed log: they contain your network key.
+  - type: dropdown
+    id: hardware
+    attributes:
+      label: Coordinator hardware model
+      options:
+        - SLZB-06
+        - SLZB-06U
+        - SLZB-06M
+        - SLZB-06MU
+        - SLZB-06P7
+        - SLZB-06P7U
+        - SLZB-06P7v1
+        - SLZB-06P10
+        - SLZB-06P10U
+        - SLZB-07
+        - SLZB-07P7
+        - SLZB-07P10
+        - SLZB-MR1
+        - SLZB-MR1U
+        - SLZB-MR2
+        - SLZB-MR2U
+        - SLZB-MR3
+        - SLZB-MR3U
+        - SLZB-MR4
+        - SLZB-MR4U
+        - SLZB-MRW10
+        - SLZB-Ultima
+        - Other (state the model in "What happened")
+    validations:
+      required: true
+  - type: dropdown
+    id: connection
+    attributes:
+      label: Connection type
+      options:
+        - USB (serial)
+        - Ethernet (TCP socket)
+        - PoE (TCP socket)
+        - Wi-Fi (TCP socket)
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: ZeroStack firmware version
+      description: As shown in the SLZB web UI or the Log Analyzer summary table.
+      placeholder: 0.9.10-beta.2 (20261113)
+    validations:
+      required: true
+  - type: input
+    id: previous-firmware
+    attributes:
+      label: Previous firmware (if migrating or restoring a backup)
+      placeholder: Koenkk Z-Stack 20260310
+    validations:
+      required: false
+  - type: input
+    id: host-stack
+    attributes:
+      label: Host stack and version
+      placeholder: Zigbee2MQTT 2.14.3 / zigbee-herdsman 11.2.0, or ZHA (Home Assistant 2026.11)
+    validations:
+      required: true
+  - type: textarea
+    id: bug-report
+    attributes:
+      label: Log Analyzer Bug Report output
+      description: Paste the Markdown from Bug Report Mode unchanged. It starts with `<!-- zerostack-bug-report v1 -->`.
+      placeholder: "<!-- zerostack-bug-report v1 -->"
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: Steps to reproduce / what happened
+      description: What you did, what you expected, and what happened instead.
+      placeholder: |
+        1. Flashed ZeroStack over Koenkk Z-Stack and restarted Zigbee2MQTT
+        2. Zigbee2MQTT restored the coordinator backup
+        3. Startup failed with ...
+    validations:
+      required: true
