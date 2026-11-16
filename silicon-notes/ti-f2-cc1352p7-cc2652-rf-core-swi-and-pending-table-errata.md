@@ -1,4 +1,4 @@
-# Silicon Engineering Note: TI SimpleLink F2 (`CC2652P`, `CC2652P7` / `CC1352P7`, `CC2674P10`) RF Core SWI & Hardware `SrcMatch` Errata
+# Silicon Engineering Note: TI SimpleLink F2 (`CC2652P`, `CC2652P7` / `CC1352P7`, `CC2674P10`) RF Core SWI & Indirect Poll Turnaround Analysis
 
 **Target Silicon:** Texas Instruments **CC2652P**, **CC2652R**, **CC2652RB**, **CC1352P2**, **CC1352P7** (`CC2652P7`), **CC2674P10** (SimpleLink Low Power F2 Platform)  
 **Target Coordinator Hardware:** **SMLIGHT SLZB-06**, **SLZB-06U** (`CC2652P`), **SLZB-06P7** / **SLZB-06P7v1**, **SLZB-06P7U**, **SLZB-07P7** (`CC2652P7` / `CC1352P7`), **SLZB-06P10**, **SLZB-07P10** (`CC2674P10`)  
@@ -12,37 +12,37 @@
 
 On Texas Instruments SimpleLink F2 devices (`CC2652P`, `CC2652P7` / `CC1352P7`, and `CC2674P10`), the IEEE 802.15.4 MAC is split across two asymmetric processor cores:
 1. **Main Application MCU (ARM Cortex-M4F / Cortex-M33 @ 48 MHz)**: Runs the Zigbee PRO R23 stack, dynamic memory manager, security engine, and serial RPC transport.
-2. **Autonomous RF Core (ARM Cortex-M0 Command & Packet Engine — CPE)**: Executes time-critical IEEE 802.15.4 operations (`192 µs` Auto-ACK turnaround, hardware `SrcMatch` lookup in `RFC_RAM`, CSMA/CA backoff, and inline AES-128 security) using chained command structures in shared SRAM dispatched via the `RF_postCmd()` / `RF_scheduleCmd()` doorbell interface (`RFC_DBELL`).
+2. **Autonomous RF Core (ARM Cortex-M0 Command & Packet Engine — CPE)**: Executes time-critical IEEE 802.15.4 operations (`192 µs` Auto-ACK turnaround, hardware pending-frame lookup, CSMA/CA backoff, and inline AES-128 security) using chained command structures in shared SRAM dispatched via the `RF_postCmd()` / `RF_scheduleCmd()` doorbell interface (`RFC_DBELL`).
 
-Under high coordinator load (40+ sleepy ZEDs polling concurrently with source-routed unicasts and group broadcasts), three low-level race conditions between the main MCU TI-RTOS (`HwiP` / `SwiP`) layer and the Cortex-M0 RF Core cause stock Z-Stack firmware to lock up or drop frames.
+Under high coordinator load (large populations of sleepy ZEDs polling concurrently with source-routed unicasts and group broadcasts), low-level race conditions between the main MCU TI-RTOS (`HwiP` / `SwiP`) layer and the Cortex-M0 RF Core cause stock Z-Stack firmware to stall or drop frames.
 
 ---
 
-## 2. `RF_FsmEventLastCommandDone` Software Interrupt Starvation & State Lockup
+## 2. Radio Command Completion Software Interrupt Starvation & State Lockup
 
 ### Phenomenon
-Under heavy bidirectional RF traffic or immediately following an Energy Detect (ED) scan / frequency synthesizer recalibration, the MAC TX state machine (`macTxActive`) or Sub-MAC command queue permanently stalls. Every subsequent outbound packet either times out or returns `0xe1: MAC_CHANNEL_ACCESS_FAILURE` (`225`) / `0x11: BUFFER_FULL` (`17`).
+Under heavy bidirectional RF traffic or immediately following an Energy Detect (ED) scan / frequency synthesizer recalibration, the MAC TX state machine or radio command queue permanently stalls. Every subsequent outbound packet either times out or returns `0xe1: MAC_CHANNEL_ACCESS_FAILURE` (`225`) / `0x11: BUFFER_FULL` (`17`).
 
 ### Silicon & Driver Root Cause
-In the stock TI `RFCC26X2_multiMode` driver, when a foreground IEEE 802.15.4 command chain (`CMD_IEEE_CSMA` → `CMD_IEEE_TX` → `CMD_IEEE_RX_ACK`) finishes on the Cortex-M0 CPE, the hardware raises the `RFC_CPE_0` interrupt (`HwiP`):
-1. `RF_hwiCpe0Active()` reads the CPE interrupt flags, clears `IRQ_LAST_FG_COMMAND_DONE` / `IRQ_LAST_COMMAND_DONE`, and posts the completion event to the RF Finite State Machine Software Interrupt (`SwiP`) via `RF_FsmEventLastCommandDone`.
-2. If a preemptive foreground abort (`RF_cancelCmd` / `RF_flushCmd`) or a synthesizer error callback races with the final microsecond of `CMD_IEEE_RX_ACK` completion while `SwiP` scheduling is temporarily disabled, the command completion bit or the active command handle transitions out of `RF_CmdDir` before the upper MAC callback receives its terminal event notification.
-3. Because the upper MAC state machine waits deterministically for the terminal callback to clear `macTxActive` and re-arm the background `CMD_IEEE_RX` state, missing or coalescing the `RF_FsmEventLastCommandDone` transition leaves `macTxActive` stuck non-zero forever.
+In legacy radio driver integrations, when a foreground IEEE 802.15.4 command chain (`CMD_IEEE_CSMA` → `CMD_IEEE_TX` → `CMD_IEEE_RX_ACK`) finishes on the Cortex-M0 CPE, the hardware raises the `RFC_CPE_0` interrupt (`HwiP`):
+1. The interrupt handler reads the CPE interrupt flags, clears command completion flags, and posts the completion event to the RF Software Interrupt (`SwiP`).
+2. If a preemptive foreground abort or a synthesizer error callback races with the final microsecond of `CMD_IEEE_RX_ACK` completion while `SwiP` scheduling is temporarily disabled, the command completion transition can complete before the upper MAC callback receives its terminal event notification.
+3. Because the upper MAC state machine waits deterministically for the terminal callback to re-arm the background `CMD_IEEE_RX` state, missing the completion transition leaves the MAC TX pipeline stuck indefinitely.
 
 ### ZeroStack Resolution
-**[SMLIGHT ZeroStack (`0.9.9-beta.1`)](https://smlight.tech/software/zerostack)** enforces **self-healing Sub-MAC receiver and synthesizer state recovery** (**Zero Freeze-Ups**), deterministically reconciling background `CMD_IEEE_RX` receive pipelines across every foreground CSMA/TX termination, Energy Detect scan, and synthesizer transition (`0` crashes across 3,255 MAC boundary/fuzz vectors).
+**[SMLIGHT ZeroStack (`0.9.9-beta.1`)](https://smlight.tech/software/zerostack)** enforces **self-healing receiver and synthesizer state recovery** (**Zero Freeze-Ups**), deterministically reconciling background `CMD_IEEE_RX` receive pipelines across every foreground CSMA/TX termination, Energy Detect scan, and synthesizer transition (`0` crashes across 3,255 MAC boundary/fuzz vectors).
 
 ---
 
-## 3. Nested Critical Section Hazards (`ICall_enterCriticalSection` / `HwiP_disable` vs. RF Doorbell & NVRAM)
+## 3. Nested Critical Section Hazards (Interrupt Masking vs. RF Doorbell & NVRAM)
 
 ### Phenomenon
-Intermittent hard lockups, missed UART RX bytes (causing `SRSP - AF - dataRequestExt after 6000ms`), or RF doorbell command rejections (`RF_StatCmdSchError`) during simultaneous UART DMA interrupts and RF ACK reception.
+Intermittent hard lockups, missed UART RX bytes (causing `SRSP - AF - dataRequestExt after 6000ms`), or RF doorbell command rejections during simultaneous UART DMA interrupts and RF ACK reception.
 
 ### Silicon & Driver Root Cause
-Stock Z-Stack layers multiple legacy critical-section abstractions (`HAL_ENTER_CRITICAL_SECTION`, `ICall_enterCriticalSection`, `HwiP_disable()`, and `SwiP_disable()`) across `mac_low_level.c`, `mac_rx.c`, `OSAL_Memory.c`, and `npi_tl_uart.c`:
-- When the upper stack modifies the NWK indirect table, performs per-frame non-volatile security key lookups (`533,156` cycles = `11.11 ms` per NWK encrypt; `1,486,228` cycles = `30.96 ms` per TCLK miss on aged NV flash), or allocates from the linear first-fit `OSAL_Memory` heap (`2,550` cycles at 64 heap holes; `10,034` cycles = `209.0 µs` for timer start), it holds critical sections across O(N) table walks and synchronous flash/radio doorbell operations.
-- Masking interrupts across millisecond-scale flash scans or `163.9 ms` `NVOCMP` page compactions causes the main MCU to miss high-baudrate UART RX FIFO watermarks and delays `RFC_CPE_0` ISR servicing past the IEEE 802.15.4 symbol boundary.
+Legacy coordinator firmware holds critical sections across O(N) table walks and synchronous flash/radio doorbell operations:
+- When the upper stack modifies the NWK indirect table, performs per-frame non-volatile security key lookups (`533,156` cycles = `11.11 ms` per NWK encrypt; `1,486,228` cycles = `30.96 ms` per TCLK miss on aged NV flash), or allocates from a linear first-fit heap (`2,550` cycles at 64 heap holes; `10,034` cycles = `209.0 µs` for timer start), interrupt latency spikes.
+- Masking or delaying execution across millisecond-scale flash scans or NVRAM page compactions causes the main MCU to miss high-baudrate UART RX FIFO watermarks and delays `RFC_CPE_0` ISR servicing past the IEEE 802.15.4 symbol boundary.
 
 ### ZeroStack Resolution
 ZeroStack eliminates O(N) linear heap scans and slow per-frame flash reads via:
@@ -51,26 +51,23 @@ ZeroStack eliminates O(N) linear heap scans and slow per-frame flash reads via:
 
 ---
 
-## 4. Hardware `SrcMatch` Table Exhaustion & `CMD_IEEE_MOD_SRC_MATCH` `ContextError (0x85)` Race
+## 4. Sleepy End-Device Poll Turnaround & Indirect Queue Isolation
 
 ### Phenomenon
-When more than 24–32 sleepy Zigbee End Devices (Aqara, Sonoff, Tuya ZEDs) poll a `CC2652P`, `CC2652P7` (`CC1352P7`), or `CC2674P10` coordinator, children frequently receive an Auto-ACK with `Frame Pending (FP) = 0` despite having packets queued on the coordinator, resulting in `0xe9: MAC_NO_ACK` (status `233`) and child detachment.
+When large populations of sleepy Zigbee End Devices (Aqara, Sonoff, Tuya ZEDs) poll a `CC2652P`, `CC2652P7` (`CC1352P7`), or `CC2674P10` coordinator, children frequently experience poll timeouts (`0xe9: MAC_NO_ACK` / `0xf0: MAC_TRANSACTION_EXPIRED`) or indirect buffer exhaustion (`0xf1: MAC_TRANSACTION_OVERFLOW`), resulting in child detachment.
 
 ### Silicon & Driver Root Cause
-On SimpleLink F2 (`CC2652P`/`CC2652P7`/`CC2674P10`), the hardware Source Matching table stored in Radio RAM (`RFC_RAM` `srcMatchShortEntry`) holds **32 short addresses** (`uint32_t srcPendEn[1]` + `uint32_t srcEntryEn[1]`).
-1. To enable/disable an entry in `srcPendEn` or toggle `bPendAllData` (`pendAll`), the main MCU must issue the immediate radio command **`CMD_IEEE_MOD_SRC_MATCH` (`0x2002`)** via `RF_runImmediateCmd()`.
-2. **The Hardware Trap**: The Cortex-M0 RF Core only accepts `CMD_IEEE_MOD_SRC_MATCH` when a background IEEE 802.15.4 receive command (`CMD_IEEE_RX`) is actively running (`status == IEEE_ACTIVE = 0x2401`) on the CPE.
-3. If the upper MAC calls `MAC_SrcMatchAckAllPending(TRUE)` or updates a child's pending bit while the background `CMD_IEEE_RX` is momentarily suspended (e.g., between radio yield/wake transitions, channel calibration, or before `CMD_IEEE_RX` has transitioned from `PENDING (0x0001)` to `IEEE_ACTIVE (0x2401)`), the RF Core rejects `CMD_IEEE_MOD_SRC_MATCH` with `CMDSTA = ContextError (0x85)`.
-4. Stock Z-Stack fails to synchronize deferred `SrcMatch` / `pendAll` mutations across radio state transitions, leaving the hardware `srcPendEn` bitmap permanently out of sync with the software indirect queue.
+Under IEEE 802.15.4 indirect transmission, when a sleepy End Device transmits a `MAC_DATA_REQ` poll, the coordinator must acknowledge with `Frame Pending (FP) = 1` and dequeue, encrypt, and transmit the held indirect packet before the sleepy child's `macMaxFrameTotalWaitTime` receive window closes.
+1. If hardware pending-frame state updates race with background `CMD_IEEE_RX` transitions (such as channel calibration or foreground TX completion), pending-frame state can desynchronize from the software indirect queue.
+2. On legacy Z-Stack, O(N⋅P) flash security scans (`11.11 ms` per NWK encrypt, `30.96 ms` per TCLK miss), synchronous NVRAM page compactions, and `3.00 s` broadcast echo stalls block the upper MAC so the indirect frame is transmitted after the ZED has already timed out and powered down its radio.
+3. Furthermore, when multiple sleeping or offline ZEDs stop polling, unpaced indirect frames can exhaust the shared coordinator buffer pool (`0xf1: MAC_TRANSACTION_OVERFLOW` / `0x11: BUFFER_FULL`).
 
 ### ZeroStack Resolution
-While both stock TI Z-Stack and ZeroStack use the same SimpleLink F2 Cortex-M0 CPE hardware 32-slot `SrcMatch` table (`RFC_RAM` `srcMatchShortEntry`) and hardware `FP=1` Auto-ACK mechanism, **[SMLIGHT ZeroStack (`0.9.9-beta.1`)](https://smlight.tech/software/zerostack)** eliminates sleepy-child poll dropouts (`0xe9: MAC_NO_ACK` / `0xf0: MAC_TRANSACTION_EXPIRED`) and indirect buffer exhaustion (`0xf1: MAC_TRANSACTION_OVERFLOW` / `0x11: BUFFER_FULL`) through two architectural invariants:
+**[SMLIGHT ZeroStack (`0.9.9-beta.1`)](https://smlight.tech/software/zerostack)** eliminates sleepy-child poll dropouts (`0xe9: MAC_NO_ACK` / `0xf0: MAC_TRANSACTION_EXPIRED`) and indirect buffer exhaustion (`0xf1: MAC_TRANSACTION_OVERFLOW` / `0x11: BUFFER_FULL`) through two architectural invariants:
 1. **Zero Flash-Read Stalls During Sleepy Poll Turnaround Windows**:
-   - After the Cortex-M0 CPE transmits an `FP=1` Auto-ACK in response to a sleepy ZED's `MAC_DATA_REQ`, the main CPU must dequeue, encrypt, and transmit the held indirect frame before the sleepy child's `macMaxFrameTotalWaitTime` receive window closes. On legacy Z-Stack, O(N⋅P) flash security scans (`11.11 ms` per NWK encrypt, `30.96 ms` per TCLK miss), `163.9 ms` `NVOCMP` page compactions, and `3.00 s` broadcast echo stalls block the upper MAC so the indirect frame is transmitted after the ZED has already timed out and powered down its radio.
    - ZeroStack executes NWK encryption in **`82.7 µs` (`3,968` cycles, `0` flash reads — 134.4× faster)**, TCLK resolution in **`6.8 µs` (`326` cycles — 4,559× faster)**, and runs storage cleanup only when the radio is idle—ensuring queued indirect packets are dequeued and transmitted immediately while the polling ZED is still awake.
 2. **Per-Child & Global Indirect Queue Quota Isolation (**Zero Battery-Device Bottlenecks**)**:
-   - Stock Z-Stack allows sleeping or offline ZEDs to hoard nearly 100% of the shared `nwkDB` buffer pool (`69 / 72` buffers), starving both other sleepy sensors (`0xf1: MAC_TRANSACTION_OVERFLOW`) and active mesh routers (`0x11: BUFFER_FULL`).
-   - ZeroStack enforces a strict `50%` indirect pool cap (`36 / 72` buffers total, max `2` queued frames per sleeping child) backed by O(1) 218-cycle memory allocation, guaranteeing that unresponsive battery sensors never starve active mesh traffic.
+   - ZeroStack enforces bounded per-child and global indirect queue reservations backed by O(1) 218-cycle memory allocation, guaranteeing that unresponsive battery sensors never starve active mesh traffic.
 
 ---
 
@@ -87,7 +84,7 @@ All measurements below were captured directly from the ARM Cortex-M4F `DWT->CYCC
 | **Write Unchanged Data (`2 B / 20 B / 100 B`)** | `19.1k / 35.3k / 100.7k` (`100,714` cyc) | **`2.0k / 2.3k / 3.8k` (`3,770` cyc)** | **Up to 26.7× faster.** ZeroStack writes **`0` bytes** to flash when data is unchanged (`48/48` writes; legacy appended on `48/48`). |
 | **Write Changed Data (`2 B / 20 B / 100 B`)** | `19.1k / 35.4k / 102.2k` | `20.1k / 37.0k / 104.8k` | Physical flash programming time dominates when bytes genuinely mutate (`+3–5%` for integrity verification). |
 | **General Item Read (Across D = 0..256)** | `581 – 14,303` (flash walk) | **`1,696 – 1,724` (flat)** | Flat across D = 0..256 regardless of log position. |
-| **First Flash Page Compaction Stall** | **Write #69** (`163.9 ms` stall) | **Write #1,013** (`13.7 ms` stall) | **14.7× more mutations** before compaction; zero wear on idempotent writes. |
+| **First Flash Page Compaction Threshold** | **Write #69** | **Write #1,013** | **14.7× more mutations** before compaction; zero wear on idempotent writes. |
 
 ### 5.2 Trust Center Link Key (TCLK) Resolution (300-Entry Table)
 
@@ -122,5 +119,5 @@ All measurements below were captured directly from the ARM Cortex-M4F `DWT->CYCC
 | **Timer Stop (T = 0 → 39 active timers)** | `515` → `1,370` cyc | **`450` → `1,050` cyc** | **1.30× faster** at high timer load. |
 | **Task `msgSend` (Q = 0 → 64 queued msgs)** | `497` → **`935` cyc** (`+7`/msg) | **`364` → `322` cyc (Flat)** | **2.90× faster** at Q=64; strictly O(1) enqueue. |
 | **Task `msgReceive` (Q = 0 → 64 queued msgs)** | `383` → `628` cyc | **`168` → `333` cyc** | **2.28× faster** at Q=0, **1.89×** at Q=64. |
-| **Host Serial `SYS_PING` (last RX byte to reply TX)** | `9,790` cyc (`4,921` cyc reply path) | **`4,618` cyc (`816` cyc reply path)** | **53% fewer total cycles; 83% faster reply path.** |
+| **Host Serial `SYS_PING` (last RX byte to reply TX)** | Legacy baseline | **53% fewer total cycles** | **53% fewer total cycles; 83% faster reply path.** |
 | **Host Serial `240 B` Frame (last RX byte to reply TX)** | `24,404` cyc | **`12,784` cyc** | **48% fewer cycles** on maximum-length ZNP frames. |
