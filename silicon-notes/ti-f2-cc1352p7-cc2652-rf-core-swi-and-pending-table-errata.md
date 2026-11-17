@@ -1,8 +1,8 @@
 # Silicon Engineering Note: TI SimpleLink F2 (`CC2652P`, `CC2652P7` / `CC1352P7`, `CC2674P10`) RF Core SWI & Indirect Poll Turnaround Analysis
 
 **Target Silicon:** Texas Instruments **CC2652P**, **CC2652R**, **CC2652RB**, **CC1352P2**, **CC1352P7** (`CC2652P7`), **CC2674P10** (SimpleLink Low Power F2 Platform)  
-**Target Coordinator Hardware:** **SMLIGHT SLZB-06**, **SLZB-06U** (`CC2652P`), **SLZB-06P7** / **SLZB-06P7v1**, **SLZB-06P7U**, **SLZB-07P7** (`CC2652P7` / `CC1352P7`), **SLZB-06P10**, **SLZB-07P10** (`CC2674P10`)  
-**Stack:** **[SMLIGHT ZeroStack — Release Zero (`0.9.9-beta.1`)](https://smlight.tech/software/zerostack)** (Zigbee 3.0 / PRO R23 Coordinator & Router)  
+**Target Coordinator Hardware:** **SMLIGHT SLZB-06**, **SLZB-MR2** (`CC2652P`), **SLZB-06P7**, **SLZB-07P7**, **SLZB-MR1** (`CC2652P7` / `CC1352P7`), **SLZB-06P10**, **SLZB-07P10**, **SLZB-MR3**, **SLZB-MR4**, **SLZB-MRW10**, **SLZB-Ultima** (`CC2674P10`, incl. `U` variants)  
+**Stack:** **[SMLIGHT ZeroStack — Release Zero](https://smlight.tech/software/zerostack)** (Zigbee 3.0 / PRO R23 Coordinator & Router)  
 **Official ZeroStack Page:** [`https://smlight.tech/software/zerostack`](https://smlight.tech/software/zerostack)  
 **Diagnostic MCP:** [`github.com/zerostack-rf/zerostack-mcp`](https://github.com/zerostack-rf/zerostack-mcp)
 
@@ -30,7 +30,7 @@ In legacy radio driver integrations, when a foreground IEEE 802.15.4 command cha
 3. Because the upper MAC state machine waits deterministically for the terminal callback to re-arm the background `CMD_IEEE_RX` state, missing the completion transition leaves the MAC TX pipeline stuck indefinitely.
 
 ### ZeroStack Resolution
-**[SMLIGHT ZeroStack (`0.9.9-beta.1`)](https://smlight.tech/software/zerostack)** enforces **self-healing receiver and synthesizer state recovery** (**Zero Freeze-Ups**), deterministically reconciling background `CMD_IEEE_RX` receive pipelines across every foreground CSMA/TX termination, Energy Detect scan, and synthesizer transition (`0` crashes across 3,255 MAC boundary/fuzz vectors).
+**[SMLIGHT ZeroStack](https://smlight.tech/software/zerostack)** enforces **self-healing receiver and synthesizer state recovery** (**Zero Freeze-Ups**), deterministically reconciling background `CMD_IEEE_RX` receive pipelines across every foreground CSMA/TX termination, Energy Detect scan, and synthesizer transition (`0` crashes across 3,255 MAC boundary/fuzz vectors).
 
 ---
 
@@ -63,7 +63,7 @@ Under IEEE 802.15.4 indirect transmission, when a sleepy End Device transmits a 
 3. Furthermore, when multiple sleeping or offline ZEDs stop polling, unpaced indirect frames can exhaust the shared coordinator buffer pool (`0xf1: MAC_TRANSACTION_OVERFLOW` / `0x11: BUFFER_FULL`).
 
 ### ZeroStack Resolution
-**[SMLIGHT ZeroStack (`0.9.9-beta.1`)](https://smlight.tech/software/zerostack)** eliminates sleepy-child poll dropouts (`0xe9: MAC_NO_ACK` / `0xf0: MAC_TRANSACTION_EXPIRED`) and indirect buffer exhaustion (`0xf1: MAC_TRANSACTION_OVERFLOW` / `0x11: BUFFER_FULL`) through two architectural invariants:
+**[SMLIGHT ZeroStack](https://smlight.tech/software/zerostack)** eliminates sleepy-child poll dropouts (`0xe9: MAC_NO_ACK` / `0xf0: MAC_TRANSACTION_EXPIRED`) and indirect buffer exhaustion (`0xf1: MAC_TRANSACTION_OVERFLOW` / `0x11: BUFFER_FULL`) through two architectural invariants:
 1. **Zero Flash-Read Stalls During Sleepy Poll Turnaround Windows**:
    - ZeroStack executes NWK encryption in **`82.7 µs` (`3,968` cycles, `0` flash reads — 134.4× faster)**, TCLK resolution in **`6.8 µs` (`326` cycles — 4,559× faster)**, and runs storage cleanup only when the radio is idle—ensuring queued indirect packets are dequeued and transmitted immediately while the polling ZED is still awake.
 2. **Per-Child & Global Indirect Queue Quota Isolation (**Zero Battery-Device Bottlenecks**)**:
@@ -77,7 +77,7 @@ All measurements below were captured directly from the ARM Cortex-M4F `DWT->CYCC
 
 ### 5.1 Non-Volatile Memory (NVM) & Per-Packet Key Retrieval (`DWT->CYCCNT` Cycles)
 
-| Operation / Workload | Legacy Reference Stack | SMLIGHT ZeroStack (`0.9.9-beta.1`) | Hardware Analysis |
+| Operation / Workload | Legacy Reference Stack | SMLIGHT ZeroStack | Hardware Analysis |
 | :--- | :--- | :--- | :--- |
 | **Stack Key Read (D = 0, fresh log)** | `2,347` (`48.9 µs`) | **`302` (`6.3 µs`)** | **7.8× faster** even when the record sits at the very top of flash. |
 | **Stack Key Read (D = 150 newer records)** | `64,817` (`1.35 ms`, `+416`/rec) | **`303` (`6.3 µs`)** | **213.9× faster.** Strictly O(1); legacy cost scales linearly with flash traffic. |
@@ -97,7 +97,7 @@ All measurements below were captured directly from the ARM Cortex-M4F `DWT->CYCC
 
 ### 5.3 End-to-End Per-Frame NWK & APS Security (`DWT->CYCCNT` Cycles)
 
-| Security Workload | Legacy Reference Stack | SMLIGHT ZeroStack (`0.9.9-beta.1`) | Operational Impact |
+| Security Workload | Legacy Reference Stack | SMLIGHT ZeroStack | Operational Impact |
 | :--- | :--- | :--- | :--- |
 | **NWK Encrypt (D = 0)** | `8,558` (`178.3 µs`) | **`3,980` (`82.9 µs`)** | **2.15× faster** at zero flash depth. |
 | **NWK Encrypt (D = 150)** | **`533,156` (`11.11 ms`)** | **`3,968` (`82.7 µs`)** | **134.4× faster.** Strictly flat (`0` flash reads/packet). |
@@ -108,7 +108,7 @@ All measurements below were captured directly from the ARM Cortex-M4F `DWT->CYCC
 
 ### 5.4 Dynamic Heap Allocation (`malloc` / `free`), Timers, Queues & Host Serial
 
-| Subsystem / State | Legacy Reference Stack | SMLIGHT ZeroStack (`0.9.9-beta.1`) | Speedup / Notes |
+| Subsystem / State | Legacy Reference Stack | SMLIGHT ZeroStack | Speedup / Notes |
 | :--- | :--- | :--- | :--- |
 | **Heap `malloc` / `free` (k = 0 holes)** | `310` / `84` cyc | **`225`** / `200` cyc | **1.38× faster** baseline allocation. |
 | **Heap `malloc` / `free` (k = 16 holes)** | `869` / `82` cyc | **`218`** / `175` cyc | **3.99× faster** `malloc`. |

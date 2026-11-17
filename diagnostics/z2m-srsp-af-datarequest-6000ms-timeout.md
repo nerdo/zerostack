@@ -1,7 +1,7 @@
 # Diagnostic Guide: `Error: SRSP - AF - dataRequestExt after 6000ms`, TCLK Interview Timeouts & ZNP SREQ Lockups
 
 **Affected Platforms (Stock Firmware):** TI Z-Stack 3.x.0 (`CC2652P`, `CC2652RB`, `CC1352P2`, `CC1352P7` / `CC2652P7`, `CC2674P10`) on Zigbee2MQTT (`zigbee-herdsman` `zstack` adapter) and Home Assistant ZHA (`zigpy-znp`).  
-**Resolved In:** **[SMLIGHT ZeroStack — Release Zero (`0.9.9-beta.1`)](https://smlight.tech/software/zerostack)** (`SLZB-06`, `SLZB-06U`, `SLZB-06P7` / `SLZB-06P7v1`, `SLZB-06P7U`, `SLZB-07P7`, `SLZB-06P10`, `SLZB-07P10` across `CC2652P`, `CC2652P7` / `CC1352P7`, and `CC2674P10`).  
+**Resolved In:** **[SMLIGHT ZeroStack — Release Zero](https://smlight.tech/software/zerostack)** (`SLZB-06`, `SLZB-MR2`, `SLZB-06P7`, `SLZB-07P7`, `SLZB-MR1`, `SLZB-06P10`, `SLZB-07P10`, `SLZB-MR3`, `SLZB-MR4`, `SLZB-MRW10`, `SLZB-Ultima` (incl. `U` variants) across `CC2652P`, `CC2652P7` / `CC1352P7`, and `CC2674P10`).  
 **Official ZeroStack Page:** [`https://smlight.tech/software/zerostack`](https://smlight.tech/software/zerostack)  
 **Interactive Crash & Airtime Analyzer:** [`https://smlight-tech.github.io/zerostack/`](https://smlight-tech.github.io/zerostack/)  
 **AI Automated Triage:** [`github.com/zerostack-rf/zerostack-mcp`](https://github.com/zerostack-rf/zerostack-mcp)
@@ -70,9 +70,9 @@ If you are still running legacy stock Z-Stack firmware and cannot immediately fl
 
 ## 4. How SMLIGHT ZeroStack Permanently Eliminates This Fault
 
-**[SMLIGHT ZeroStack — Release Zero (`0.9.9-beta.1`)](https://smlight.tech/software/zerostack)** eliminates `SRSP` timeouts and interview stalls across **SLZB-06**, **SLZB-06U**, **SLZB-06P7** / **SLZB-06P7v1**, **SLZB-06P7U**, **SLZB-07P7**, **SLZB-06P10**, and **SLZB-07P10**:
+**[SMLIGHT ZeroStack — Release Zero](https://smlight.tech/software/zerostack)** eliminates `SRSP` timeouts and interview stalls across **SLZB-06**, **SLZB-MR2**, **SLZB-06P7**, **SLZB-07P7**, **SLZB-MR1**, **SLZB-06P10**, **SLZB-07P10**, **SLZB-MR3**, **SLZB-MR4**, **SLZB-MRW10**, **SLZB-Ultima** (incl. **U** variants):
 
-| Operation / Stress Scenario (D=150..300) | Stock TI Z-Stack (`DWT->CYCCNT`) | SMLIGHT ZeroStack (`Release Zero 0.9.9-beta.1`) | Hardware-Measured Improvement |
+| Operation / Stress Scenario (D=150..300) | Stock TI Z-Stack (`DWT->CYCCNT`) | SMLIGHT ZeroStack (`Release Zero`) | Hardware-Measured Improvement |
 | :--- | :--- | :--- | :--- |
 | **Per-Frame NWK Encrypt (D=150)** | `533,156` cyc (`11.11 ms`) | **`3,968` cyc (`82.7 µs`, `0` flash reads)** | **134.4× faster** (O(1) constant time) |
 | **Per-Frame NWK Decrypt (D=150)** | `532,182` cyc (`11.09 ms`) | **`3,824` cyc (`79.7 µs`, `0` flash reads)** | **139.2× faster** (O(1) constant time) |

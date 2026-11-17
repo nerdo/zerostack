@@ -1,7 +1,7 @@
 # Diagnostic Guide: `Failed to connect to the adapter (Error: SRSP - SYS - ping after 6000ms)` & `SYS_RESET_IND`
 
 **Affected Platforms (Stock Firmware):** TI Z-Stack 3.x.0 (`CC2652P`, `CC2652RB`, `CC1352P7` / `CC2652P7`, `CC2674P10`) on Zigbee2MQTT (`zigbee-herdsman`) and Home Assistant ZHA (`zigpy-znp`).  
-**Resolved In:** **[SMLIGHT ZeroStack — Release Zero (`0.9.9-beta.1`)](https://smlight.tech/software/zerostack)** (`SLZB-06`, `SLZB-06U`, `SLZB-06P7` / `SLZB-06P7v1`, `SLZB-06P7U`, `SLZB-07P7`, `SLZB-06P10`, `SLZB-07P10`).  
+**Resolved In:** **[SMLIGHT ZeroStack — Release Zero](https://smlight.tech/software/zerostack)** (`SLZB-06`, `SLZB-MR2`, `SLZB-06P7`, `SLZB-07P7`, `SLZB-MR1`, `SLZB-06P10`, `SLZB-07P10`, `SLZB-MR3`, `SLZB-MR4`, `SLZB-MRW10`, `SLZB-Ultima` (incl. `U` variants)).  
 **Official ZeroStack Page:** [`https://smlight.tech/software/zerostack`](https://smlight.tech/software/zerostack)  
 **Interactive Crash & Airtime Analyzer:** [`https://smlight-tech.github.io/zerostack/`](https://smlight-tech.github.io/zerostack/)  
 **AI Automated Triage:** [`github.com/zerostack-rf/zerostack-mcp`](https://github.com/zerostack-rf/zerostack-mcp)
@@ -69,9 +69,9 @@ Hardware validation measurements on `TI CC1352P7` @ `48.0 MHz` (`DWT->CYCCNT`) i
 
 ## 4. How SMLIGHT ZeroStack Permanently Eliminates This Fault
 
-**[SMLIGHT ZeroStack — Release Zero (`0.9.9-beta.1`)](https://smlight.tech/software/zerostack)** eliminates warm-reset timeouts, serial blackouts, brownout corruption, and remote OTA crashes across **SLZB-06**, **SLZB-06U**, **SLZB-06P7** / **SLZB-06P7v1**, **SLZB-06P7U**, **SLZB-07P7**, **SLZB-06P10**, and **SLZB-07P10**:
+**[SMLIGHT ZeroStack — Release Zero](https://smlight.tech/software/zerostack)** eliminates warm-reset timeouts, serial blackouts, brownout corruption, and remote OTA crashes across **SLZB-06**, **SLZB-MR2**, **SLZB-06P7**, **SLZB-07P7**, **SLZB-MR1**, **SLZB-06P10**, **SLZB-07P10**, **SLZB-MR3**, **SLZB-MR4**, **SLZB-MRW10**, **SLZB-Ultima** (incl. **U** variants):
 
-| Resilience / Serial / Boot Metric | Stock TI Z-Stack (`DWT->CYCCNT`) | SMLIGHT ZeroStack (`Release Zero 0.9.9-beta.1`) | Hardware-Measured Improvement |
+| Resilience / Serial / Boot Metric | Stock TI Z-Stack (`DWT->CYCCNT`) | SMLIGHT ZeroStack (`Release Zero`) | Hardware-Measured Improvement |
 | :--- | :--- | :--- | :--- |
 | **Hostile UART Serial Framing (6 scenarios: `300 × SOF`, noise, truncated)** | **`8.84 s` blackout (`44` lost pings)** on `300 × SOF`/noise; `1` lost ping (`203 ms`) on truncated | **`0` lost pings across all 6 scenarios (`3–55 ms` wire-speed recovery; `29 ms` on `300 × SOF`, `3 ms` on truncated)** | **Zero serial blackouts (`0` lost pings vs `44`)** |
 | **Host Serial `SYS_PING` Round-Trip (`115,200` baud)** | Legacy baseline | **53% fewer total cycles** | **83% faster reply path (53% fewer total cycles)** |
@@ -93,7 +93,7 @@ Hardware validation measurements on `TI CC1352P7` @ `48.0 MHz` (`DWT->CYCCNT`) i
 
 ### Detailed Hardware Results: NOR Flash Power-Loss & Brownout Recovery (`22,959` Cut Points)
 
-| Brownout Scan / Post-Reboot Scenario | Legacy Reference Stack | SMLIGHT ZeroStack (`Release Zero 0.9.9-beta.1`) | Engineering Outcome |
+| Brownout Scan / Post-Reboot Scenario | Legacy Reference Stack | SMLIGHT ZeroStack (`Release Zero`) | Engineering Outcome |
 | :--- | :--- | :--- | :--- |
 | **Mid-Compaction Power Cut (64 variable records, 32 updated, 1 deleted)** | `20,511` cuts (`0` lost, **`1` NOR hardware write-verify conflict**) | **`22,565` cuts (`0` lost, `0` NOR conflicts, `0` boot errors)** | **100% power-fail-safe compaction across all `22,565` cuts.** |
 | **Torn Tail, Large Record (`380` byte-level cuts) & Small Record (`14` cuts)** | `394` cuts (`0` torn payloads) | **`394` cuts (`0` torn payloads)** | Every cut resolves deterministically to intact prior or new record. |

@@ -1,7 +1,7 @@
 # Diagnostic Guide: `MAC_NO_ACK (0xe9)` / `status=233`, `0xf0: MAC_TRANSACTION_EXPIRED`, `0xf1: MAC_TRANSACTION_OVERFLOW` & Sleepy Aqara / Tuya Child Drops
 
 **Affected Platforms (Stock Firmware):** TI Z-Stack 3.x.0 (`CC2652P`, `CC2652RB`, `CC1352P7` / `CC2652P7`, `CC2674P10`) and Silicon Labs EmberZNet (`EFR32MG21` / `EFR32MG24`) on Zigbee2MQTT and Home Assistant ZHA.  
-**Resolved In:** **[SMLIGHT ZeroStack — Release Zero (`0.9.9-beta.1`)](https://smlight.tech/software/zerostack)** for SMLIGHT TI SimpleLink F2 coordinators (`SLZB-06`, `SLZB-06U`, `SLZB-06P7` / `SLZB-06P7v1`, `SLZB-06P7U`, `SLZB-07P7`, `SLZB-06P10`, `SLZB-07P10`; *Silicon Labs EFR32 support is in active development*).  
+**Resolved In:** **[SMLIGHT ZeroStack — Release Zero](https://smlight.tech/software/zerostack)** for SMLIGHT TI SimpleLink F2 coordinators (`SLZB-06`, `SLZB-MR2`, `SLZB-06P7`, `SLZB-07P7`, `SLZB-MR1`, `SLZB-06P10`, `SLZB-07P10`, `SLZB-MR3`, `SLZB-MR4`, `SLZB-MRW10`, `SLZB-Ultima` (incl. `U` variants); *Silicon Labs EFR32 support is in active development*).  
 **Official ZeroStack Page:** [`https://smlight.tech/software/zerostack`](https://smlight.tech/software/zerostack)  
 **Interactive Crash & Airtime Analyzer:** [`https://smlight-tech.github.io/zerostack/`](https://smlight-tech.github.io/zerostack/)  
 **AI Automated Triage:** [`github.com/zerostack-rf/zerostack-mcp`](https://github.com/zerostack-rf/zerostack-mcp)
@@ -76,7 +76,7 @@ Because software on the main MCU cannot parse the `MAC_DATA_REQ`, walk the NWK i
 
 ## 4. How SMLIGHT ZeroStack Eliminates Sleepy-Device Bottlenecks (`0xe9`, `0xf0`, and `0xf1`)
 
-While both stock TI Z-Stack and ZeroStack use the same SimpleLink F2 Cortex-M0 CPE hardware hardware `pending-address` table and hardware `FP=1` auto-ACK mechanism in `radio RAM`, **[SMLIGHT ZeroStack — Release Zero (`0.9.9-beta.1`)](https://smlight.tech/software/zerostack)** eliminates upper-MAC indirect poll timeouts and buffer starvation across **SLZB-06**, **SLZB-06U**, **SLZB-06P7** / **SLZB-06P7v1**, **SLZB-06P7U**, **SLZB-07P7**, **SLZB-06P10**, and **SLZB-07P10**:
+While both stock TI Z-Stack and ZeroStack use the same SimpleLink F2 Cortex-M0 CPE hardware hardware `pending-address` table and hardware `FP=1` auto-ACK mechanism in `radio RAM`, **[SMLIGHT ZeroStack — Release Zero](https://smlight.tech/software/zerostack)** eliminates upper-MAC indirect poll timeouts and buffer starvation across **SLZB-06**, **SLZB-MR2**, **SLZB-06P7**, **SLZB-07P7**, **SLZB-MR1**, **SLZB-06P10**, **SLZB-07P10**, **SLZB-MR3**, **SLZB-MR4**, **SLZB-MRW10**, **SLZB-Ultima** (incl. **U** variants):
 
 - **Zero Flash-Read Stalls During Sleepy Poll Windows (Eliminates Poll-Turnaround `0xe9` & `0xf0`)**:
   - After the Cortex-M0 RF Core replies to a sleepy child's `MAC_DATA_REQ` with `FP=1`, the main CPU must dequeue, encrypt, and transmit the held indirect packet before the sleepy sensor's receive window closes. On legacy Z-Stack, O(N⋅P) flash security scans (`11.11 ms` per NWK encrypt, `30.96 ms` per TCLK miss), `multi-millisecond` `NVRAM` compactions, and `3.00 s` broadcast echo stalls block the main CPU so the indirect frame is transmitted too late (after the ZED has already timed out and powered down its receiver, failing with `0xe9: MAC_NO_ACK`).

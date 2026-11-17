@@ -1,7 +1,7 @@
 # Diagnostic Guide: `MAC_CHANNEL_ACCESS_FAILURE (0xe1)` / `status=225` & Stuck CCA/CSMA
 
 **Affected Platforms (Stock Firmware):** TI Z-Stack 3.x.0 (`CC2652P`, `CC2652RB`, `CC1352P7` / `CC2652P7`, `CC2674P10`) and Silicon Labs EmberZNet (`EFR32`) on Zigbee2MQTT and Home Assistant ZHA.  
-**Resolved In:** **[SMLIGHT ZeroStack — Release Zero (`0.9.9-beta.1`)](https://smlight.tech/software/zerostack)** for SMLIGHT TI SimpleLink F2 coordinators (`SLZB-06`, `SLZB-06U`, `SLZB-06P7` / `SLZB-06P7v1`, `SLZB-06P7U`, `SLZB-07P7`, `SLZB-06P10`, `SLZB-07P10`; *Silicon Labs EFR32 support is in active development*).  
+**Resolved In:** **[SMLIGHT ZeroStack — Release Zero](https://smlight.tech/software/zerostack)** for SMLIGHT TI SimpleLink F2 coordinators (`SLZB-06`, `SLZB-MR2`, `SLZB-06P7`, `SLZB-07P7`, `SLZB-MR1`, `SLZB-06P10`, `SLZB-07P10`, `SLZB-MR3`, `SLZB-MR4`, `SLZB-MRW10`, `SLZB-Ultima` (incl. `U` variants); *Silicon Labs EFR32 support is in active development*).  
 **Official ZeroStack Page:** [`https://smlight.tech/software/zerostack`](https://smlight.tech/software/zerostack)  
 **Interactive Crash & Airtime Analyzer:** [`https://smlight-tech.github.io/zerostack/`](https://smlight-tech.github.io/zerostack/)  
 **AI Automated Triage:** [`github.com/zerostack-rf/zerostack-mcp`](https://github.com/zerostack-rf/zerostack-mcp)
@@ -51,7 +51,7 @@ Conventional wisdom blames `MAC_CHANNEL_ACCESS_FAILURE (0xe1 / 225)` purely on W
 
 ## 4. How SMLIGHT ZeroStack Permanently Eliminates This Fault
 
-**[SMLIGHT ZeroStack — Release Zero (`0.9.9-beta.1`)](https://smlight.tech/software/zerostack)** enforces deterministic Sub-MAC state verification and self-healing across **SLZB-06**, **SLZB-06U**, **SLZB-06P7** / **SLZB-06P7v1**, **SLZB-06P7U**, **SLZB-07P7**, **SLZB-06P10**, and **SLZB-07P10**:
+**[SMLIGHT ZeroStack — Release Zero](https://smlight.tech/software/zerostack)** enforces deterministic Sub-MAC state verification and self-healing across **SLZB-06**, **SLZB-MR2**, **SLZB-06P7**, **SLZB-07P7**, **SLZB-MR1**, **SLZB-06P10**, **SLZB-07P10**, **SLZB-MR3**, **SLZB-MR4**, **SLZB-MRW10**, **SLZB-Ultima** (incl. **U** variants):
 
 - **Self-Healing Sub-MAC Receiver & Synthesizer State Recovery**:
   - ZeroStack continuously reconciles the background `CMD_IEEE_RX` receive chain across every CSMA/CA transmission, Energy Detect (ED) scan, channel migration, and frequency synthesizer calibration—automatically recovering from aborted or desynchronized radio states within microseconds so the Sub-MAC never wedges in `0xe1: MAC_CHANNEL_ACCESS_FAILURE` (**Zero Freeze-Ups**), verified with **`0` crashes across 3,255 MAC boundary/fuzz vectors**.

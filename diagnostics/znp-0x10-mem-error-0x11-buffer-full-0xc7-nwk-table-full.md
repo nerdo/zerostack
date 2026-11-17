@@ -4,7 +4,7 @@
 - TI Z-Stack 3.x.0 (`CC2652P`, `CC2652RB`, `CC1352P7` / `CC2652P7`, `CC2674P10`) on Zigbee2MQTT (`zigbee-herdsman` `zstack`) and Home Assistant ZHA (`zigpy-znp`).
 - Silicon Labs EmberZNet (`EFR32MG21` / `EFR32MG24`) on Zigbee2MQTT (`ember` / `ezsp`) and ZHA (`bellows`).
 
-**Resolved In:** **[SMLIGHT ZeroStack — Release Zero (`0.9.9-beta.1`)](https://smlight.tech/software/zerostack)** for SMLIGHT TI SimpleLink F2 coordinators (`SLZB-06`, `SLZB-06U`, `SLZB-06P7` / `SLZB-06P7v1`, `SLZB-06P7U`, `SLZB-07P7`, `SLZB-06P10`, `SLZB-07P10`; *Silicon Labs EFR32 support is in active development*).  
+**Resolved In:** **[SMLIGHT ZeroStack — Release Zero](https://smlight.tech/software/zerostack)** for SMLIGHT TI SimpleLink F2 coordinators (`SLZB-06`, `SLZB-MR2`, `SLZB-06P7`, `SLZB-07P7`, `SLZB-MR1`, `SLZB-06P10`, `SLZB-07P10`, `SLZB-MR3`, `SLZB-MR4`, `SLZB-MRW10`, `SLZB-Ultima` (incl. `U` variants); *Silicon Labs EFR32 support is in active development*).  
 **Official ZeroStack Page:** [`https://smlight.tech/software/zerostack`](https://smlight.tech/software/zerostack)  
 **Interactive Crash & Airtime Analyzer:** [`https://smlight-tech.github.io/zerostack/`](https://smlight-tech.github.io/zerostack/)  
 **AI Automated Triage:** [`github.com/zerostack-rf/zerostack-mcp`](https://github.com/zerostack-rf/zerostack-mcp)
@@ -87,9 +87,9 @@ On Silicon Labs EFR32 coordinators running EmberZNet:
 
 ## 4. How SMLIGHT ZeroStack Permanently Eliminates These Faults
 
-**[SMLIGHT ZeroStack — Release Zero (`0.9.9-beta.1`)](https://smlight.tech/software/zerostack)** eliminates dynamic heap fragmentation, broadcast lockups, and table starvation across SMLIGHT TI SimpleLink F2 coordinators (**SLZB-06**, **SLZB-06U**, **SLZB-06P7** / **SLZB-06P7v1**, **SLZB-06P7U**, **SLZB-07P7**, **SLZB-06P10**, **SLZB-07P10**; *EFR32 support in active development*):
+**[SMLIGHT ZeroStack — Release Zero](https://smlight.tech/software/zerostack)** eliminates dynamic heap fragmentation, broadcast lockups, and table starvation across SMLIGHT TI SimpleLink F2 coordinators (**SLZB-06**, **SLZB-MR2**, **SLZB-06P7**, **SLZB-07P7**, **SLZB-MR1**, **SLZB-06P10**, **SLZB-07P10**, **SLZB-MR3**, **SLZB-MR4**, **SLZB-MRW10**, **SLZB-Ultima** (incl. **U** variants); *EFR32 support in active development*):
 
-| Subsystem / Stress Vector | Stock TI Z-Stack (`DWT->CYCCNT`) | SMLIGHT ZeroStack (`Release Zero 0.9.9-beta.1`) | Hardware-Measured Improvement |
+| Subsystem / Stress Vector | Stock TI Z-Stack (`DWT->CYCCNT`) | SMLIGHT ZeroStack (`Release Zero`) | Hardware-Measured Improvement |
 | :--- | :--- | :--- | :--- |
 | **Dynamic Memory Allocation (`malloc` @ 64 heap holes)** | `2,550` cyc (`53.1 µs`, O(k) hole walk) | **`218` cyc (`4.5 µs`, O(1) constant time)** | **11.7× faster** (0% fragmentation penalty) |
 | **Timer Start Latency (T=39 timers, 64 heap holes)** | `10,034` cyc (`209.0 µs`, heap-coupled) | **`1,448` cyc (`30.2 µs`, heap-independent)** | **6.9× faster** |
@@ -110,7 +110,7 @@ On Silicon Labs EFR32 coordinators running EmberZNet:
 
 ### Detailed Hardware Results: Resource Exhaustion & Broadcast Storm Resilience (`CC1352P7` @ `48.0 MHz`)
 
-| Exhaustion / Broadcast Storm Vector | Legacy Reference Stack | SMLIGHT ZeroStack (`Release Zero 0.9.9-beta.1`) | Operational Outcome |
+| Exhaustion / Broadcast Storm Vector | Legacy Reference Stack | SMLIGHT ZeroStack (`Release Zero`) | Operational Outcome |
 | :--- | :--- | :--- | :--- |
 | **Timers held until allocation refusal** | Uncapped up to harness limit (`255`) | **Bounded capacity refusal (`NO_TIMER_AVAIL`)** | Runaway timer use is refused cleanly at a bounded limit instead of exhausting memory. |
 | **Heap exhausted to `0 B` (`keep = 0`) + In-band release** | `5/5` pings; recovers (`Δheap = 0 B`) | **`5/5` pings; recovers 100% (Δheap = 0 B)** | Control plane remains responsive at `0 B` free heap with zero memory leaks after release. |
