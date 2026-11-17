@@ -6,46 +6,31 @@ body:
   - type: markdown
     attributes:
       value: |
-        ## Before you file
-        Most reports need the ZNP/MT commands that ran **before** the error, not only the last stack-trace line.
+        ## Before you file — Why `debug` logs get bugs fixed fast
+        Standard `info` or `error` logs only show the final symptom (like a "timeout" or "delivery failed" message), not what caused it.
 
-        **1. Enable debug logging and reproduce the problem once**
-        - Zigbee2MQTT: set `advanced: log_level: debug` in `configuration.yaml` (or start with `DEBUG=zigbee-herdsman*`), restart, reproduce, then download the log.
-        - ZHA: add `zigpy_znp: debug` under `logger: logs:` in Home Assistant, reproduce, then download the full log.
+        Enabling **`debug` logging** records the actual conversation between your smart home software and the coordinator right before the error occurred. With a debug log, we can **replay and reproduce the exact bug in our lab** to fix the root cause instead of guessing.
+        ---
 
-        **2. Open the [Log Analyzer in Bug Report Mode](https://smlight-tech.github.io/zerostack/?mode=bug-report)** and drop the log file on it.
-        It runs entirely in your browser and **automatically scrubs all network and link keys** (they become `<KEY:…>` tags), masks the middle bytes of IEEE addresses, shortens file paths, and extracts the exact command trace before each fault.
-        Click **Copy for GitHub** and paste the result below.
+        ### 1. Enable `debug` logging and reproduce the problem once
+        - **Zigbee2MQTT:** Set `advanced: log_level: debug` in `configuration.yaml` (or launch with `DEBUG=zigbee-herdsman*` so raw `znp:SREQ` / `znp:AREQ` frames are recorded), restart, reproduce the issue, and download the log file.
+        - **Home Assistant (ZHA):** Go to **Settings → Devices & services → Zigbee Home Automation**, click **`⋮` → Enable debug logging**, reproduce the problem (or click **`⋮` → Reload** if the issue happens on startup), then click **Disable debug logging** to automatically download the log file.
 
-        Never paste a raw `coordinator_backup.json`, `configuration.yaml` or unscrubbed log: they contain your network key.
-  - type: dropdown
+        ### 2. Scrub & extract with the [Log Analyzer (Bug Report Mode)](https://smlight-tech.github.io/zerostack/?mode=bug-report)
+        Drop your debug log into the analyzer. It runs **entirely in your browser** (no data leaves your machine) and automatically:
+        - **Scrubs all network and link keys** into deterministic `<KEY:xxxx>` tags so key mismatches stay visible without exposing secrets.
+        - **Masks IEEE addresses** (retaining the OUI prefix and final byte so device routing remains traceable) and strips local file paths.
+        - **Extracts the exact ZNP command sequence** immediately preceding each fault.
+
+        Click **Copy for GitHub** and paste the result into the **Log Analyzer output** field below.
+
+        > ⚠️ **Security note:** Never paste a raw `coordinator_backup.json`, `configuration.yaml`, or unscrubbed debug log directly into an issue — they contain your plaintext Zigbee network key inside NVRAM read/write payloads.
+  - type: input
     id: hardware
     attributes:
       label: Coordinator hardware model
-      options:
-        - SLZB-06
-        - SLZB-06U
-        - SLZB-06M
-        - SLZB-06MU
-        - SLZB-06P7
-        - SLZB-06P7U
-        - SLZB-06P7v1
-        - SLZB-06P10
-        - SLZB-06P10U
-        - SLZB-07
-        - SLZB-07P7
-        - SLZB-07P10
-        - SLZB-MR1
-        - SLZB-MR1U
-        - SLZB-MR2
-        - SLZB-MR2U
-        - SLZB-MR3
-        - SLZB-MR3U
-        - SLZB-MR4
-        - SLZB-MR4U
-        - SLZB-MRW10
-        - SLZB-Ultima
-        - Other (state the model in "What happened")
+      description: Enter your SMLIGHT model as shown in the web UI or device label (for multi-radio models, note which radio slot if applicable).
+      placeholder: e.g. SLZB-06p7, SLZB-06U, SLZB-MR1, SMHUB, SMHUB-Nano...
     validations:
       required: true
   - type: dropdown
@@ -55,7 +40,6 @@ body:
       options:
         - USB (serial)
         - Ethernet (TCP socket)
-        - PoE (TCP socket)
         - Wi-Fi (TCP socket)
     validations:
       required: true
