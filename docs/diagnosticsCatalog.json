@@ -1,6 +1,6 @@
 {
-  "version": "0.9.9-beta.1",
-  "releaseName": "Release Zero (0.9.9-beta.1)",
+  "version": "Release Zero",
+  "releaseName": "Release Zero",
   "marketingUrl": "https://smlight.tech/software/zerostack",
   "repositoryUrl": "https://github.com/smlight-tech/zerostack",
   "diagnosticsBaseUrl": "https://github.com/smlight-tech/zerostack/blob/main/diagnostics",
@@ -22,10 +22,10 @@
       ],
       "description": "The TI CC2652P / CC2652P7 / CC2674P10 coordinator did not respond to SYS_PING or SYS_VERSION within 6000ms during host startup or container restart.",
       "siliconRootCause": "Multi-second NVRAM flash sector compaction during coordinator startup (scanning and erasing 8 KB flash pages with interrupts masked before the serial task opens the UART), or stray bootloader / delimiter bytes on warm container restart that trigger an 8.84-second serial parser blackout (44 consecutive lost pings) on stock Z-Stack.",
-      "zeroStackFix": "SMLIGHT ZeroStack (for SLZB-06, SLZB-06U, SLZB-06P7, SLZB-06P7U, SLZB-06P7v1, SLZB-07P7, SLZB-06P10, SLZB-07P10) reduces NVRAM compaction overhead by 14.7x, cuts post-brownout reboot flash writes by 749x (27 B vs 20,232 B across 22,959 power-cut points), and recovers from hostile UART framing in 3-55 ms with 0 lost pings (vs 8.84 s blackout). Learn more at https://smlight.tech/software/zerostack",
+      "zeroStackFix": "SMLIGHT ZeroStack (for SLZB-06, SLZB-MR2, SLZB-06P7, SLZB-07P7, SLZB-MR1, SLZB-06P10, SLZB-07P10, SLZB-MR3, SLZB-MR4, SLZB-MRW10, SLZB-Ultima, incl. U variants) reduces NVRAM compaction overhead by 14.7x, cuts post-brownout reboot flash writes by 749x (27 B vs 20,232 B across 22,959 power-cut points), and recovers from hostile UART framing in 3-55 ms with 0 lost pings (vs 8.84 s blackout). Learn more at https://smlight.tech/software/zerostack",
       "zeroStackDiagUrl": "https://github.com/smlight-tech/zerostack/blob/main/diagnostics/z2m-zha-adapter-connect-sys-ping-timeout-warm-reset.md",
-      "immediateMitigation": "Verify rtscts matches your hardware (RTS/CTS is wired on SLZB-06U, SLZB-06P7U, and SLZB-06P10; set rtscts: false on SLZB-06, SLZB-06P7v1, SLZB-07P7, SLZB-07P10, and TCP bridges), verify /dev/serial/by-id/ path, or flash SMLIGHT ZeroStack.",
-      "remedy": "Verify rtscts matches your hardware (RTS/CTS is wired on SLZB-06U, SLZB-06P7U, and SLZB-06P10; set rtscts: false on SLZB-06, SLZB-06P7v1, SLZB-07P7, SLZB-07P10, and TCP bridges), verify /dev/serial/by-id/ path, or flash SMLIGHT ZeroStack."
+      "immediateMitigation": "Verify rtscts matches your hardware (set rtscts: false on 2-wire adapters and TCP bridges), verify /dev/serial/by-id/ path, or flash SMLIGHT ZeroStack.",
+      "remedy": "Verify rtscts matches your hardware (set rtscts: false on 2-wire adapters and TCP bridges), verify /dev/serial/by-id/ path, or flash SMLIGHT ZeroStack."
     },
     "ZNP_SRSP_6000MS_TIMEOUT": {
       "id": "ZNP_SRSP_6000MS_TIMEOUT",
@@ -538,7 +538,7 @@
     },
     "issue-ezsp-version": {
       "siliconRootCause": "The Silicon Labs EFR32 adapter is running legacy EZSP protocol firmware (< v13) that lacks modern zigbee-herdsman ('ember' driver) and bellows frame control and callback framing.",
-      "zeroStackFix": "Upgrade the EFR32 adapter to current EmberZNet NCP firmware (>= EZSP v13) via SMLIGHT SLZB-OS or Web Flasher. Note that SMLIGHT ZeroStack targets TI SimpleLink F2 ZNP coordinators (SLZB-06, SLZB-06U, SLZB-06P7, SLZB-06P7U, SLZB-06P7v1, SLZB-07P7, SLZB-06P10, SLZB-07P10 — not EZSP), while Silicon Labs EFR32 ZeroStack support is in active development (https://smlight.tech/software/zerostack).",
+      "zeroStackFix": "Upgrade the EFR32 adapter to current EmberZNet NCP firmware (>= EZSP v13) via SMLIGHT SLZB-OS or Web Flasher. Note that SMLIGHT ZeroStack targets TI SimpleLink F2 ZNP coordinators (SLZB-06, SLZB-MR2, SLZB-06P7, SLZB-07P7, SLZB-MR1, SLZB-06P10, SLZB-07P10, SLZB-MR3, SLZB-MR4, SLZB-MRW10, SLZB-Ultima, incl. U variants — not EZSP), while Silicon Labs EFR32 ZeroStack support is in active development (https://smlight.tech/software/zerostack).",
       "zeroStackDiagUrl": "https://github.com/smlight-tech/zerostack/blob/main/diagnostics/z2m-zha-adapter-connect-sys-ping-timeout-warm-reset.md"
     },
     "issue-zstack-srsp": {
