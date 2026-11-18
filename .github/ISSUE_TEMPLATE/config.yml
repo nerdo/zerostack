@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Interactive ZeroStack Log Analyzer (Bug Report Mode)
+    url: https://smlight-tech.github.io/zerostack/?mode=bug-report
+    about: Scrub network keys & IEEE addresses in your browser before submitting a bug report.
