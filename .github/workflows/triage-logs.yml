@@ -34,26 +34,33 @@ jobs:
             const { execFileSync } = require('node:child_process');
 
             const isComment = Boolean(context.payload.comment);
-            const target = isComment ? context.payload.comment : context.payload.issue;
+            const issue = context.payload.issue;
+            const target = isComment ? context.payload.comment : issue;
             const body = (target && target.body) || '';
             if (!body.trim()) return;
 
             if (
               body.includes('## ZeroStack Log Analyzer — Bug Report') ||
-              body.includes('<!-- zerostack-auto-log-report')
+              body.includes('<!-- zerostack-auto-log-report') ||
+              body.includes('<!-- z2m-log-analyzer-missing-context -->')
             ) {
-              core.info('Body already contains an auto-generated bug report; skipping.');
+              core.info('Body already contains an auto-generated triage comment; skipping.');
               return;
             }
+
+            const issueLabels = Array.isArray(issue?.labels)
+              ? issue.labels.map((l) => (typeof l === 'string' ? l : l?.name || '').toLowerCase()).filter(Boolean)
+              : [];
+            const hasBugLabel = issueLabels.includes('bug');
+            const hasTemplateHeadings =
+              /###\s+(?:Coordinator hardware model|Log Analyzer Bug Report output|Steps to reproduce)/i.test(body);
+            const errorSymptomRe =
+              /\b(?:Error:|SRSP|timeout|pan_id|channel_mask|Cannot backup|not commissioned|MEM_ERROR|BUFFER_FULL|NWK_TABLE_FULL|MAC_NO_ACK|MAC_CHANNEL_ACCESS_FAILURE)\b/i;
+            const isBugReport = !isComment && (hasBugLabel || hasTemplateHeadings || errorSymptomRe.test(body));
 
             const markerRe = /(?:zh:zstack:|z2m:|zigpy|bellows|otbr-agent|SRSP\s*-|osalNv|nvWrite|leaveInd|tcDeviceInd)/i;
             const attachmentRe = /https:\/\/github\.com\/user-attachments\/files\/[^\s)>\]]+\.(?:log|txt)(?:\?[^\s)>\]]*)?/gi;
             const attachmentUrls = [...new Set(body.match(attachmentRe) || [])];
-
-            if (!markerRe.test(body) && attachmentUrls.length === 0) {
-              core.info('No Zigbee/Thread log markers or .log/.txt attachment URLs detected; skipping.');
-              return;
-            }
 
             const chunks = [];
             const fencedMatches = [...body.matchAll(/```[^\n]*\n([\s\S]*?)```/g)];
@@ -61,9 +68,9 @@ jobs:
               .map((m) => (m[1] || '').trim())
               .filter(Boolean)
               .join('\n');
-            if (fencedText && markerRe.test(fencedText)) {
+            if (fencedText && (markerRe.test(fencedText) || errorSymptomRe.test(fencedText))) {
               chunks.push(fencedText);
-            } else if (markerRe.test(body)) {
+            } else if (markerRe.test(body) || errorSymptomRe.test(body) || isBugReport) {
               chunks.push(body);
             }
 
@@ -97,57 +104,141 @@ jobs:
               }
             }
 
+            let analysis = {
+              contextSufficiency: 'no-wire-frames',
+              mtCommandCount: 0,
+              preFaultMtCommandCount: 0,
+              hasStartupContext: false,
+              faultsCount: 0,
+              markdown: '',
+            };
+
             const combined = chunks.join('\n');
-            if (!combined.trim()) {
-              core.info('No non-empty log content extracted; skipping.');
+            if (combined.trim()) {
+              const logPath = '/tmp/extracted.log';
+              fs.writeFileSync(logPath, combined, 'utf8');
+              try {
+                const rawJson = execFileSync(
+                  'node',
+                  ['.github/scripts/z2m-log-analyzer.mjs', logPath, '--bug-report-json'],
+                  { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }
+                ).trim();
+                if (rawJson) {
+                  analysis = JSON.parse(rawJson);
+                }
+              } finally {
+                try { fs.unlinkSync(logPath); } catch {}
+              }
+            }
+
+            const hasSufficientLog =
+              analysis.mtCommandCount >= 5 &&
+              (analysis.faultsCount === 0 || analysis.preFaultMtCommandCount >= 5);
+
+            const upsertComment = async (marker, commentBody) => {
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                per_page: 100,
+              });
+              const existing = comments.find((c) => c.body && c.body.includes(marker));
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                  body: commentBody,
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  body: commentBody,
+                });
+              }
+            };
+
+            const removeDebugLabelsIfPresent = async () => {
+              for (const labelName of ['needs-debug-log', 'needs-debug-logs']) {
+                if (issueLabels.includes(labelName)) {
+                  try {
+                    await github.rest.issues.removeLabel({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      issue_number: issue.number,
+                      name: labelName,
+                    });
+                  } catch (err) {
+                    core.warning(`Could not remove label ${labelName}: ${err && err.message ? err.message : String(err)}`);
+                  }
+                }
+              }
+            };
+
+            if (isComment) {
+              if (!hasSufficientLog) {
+                core.info(
+                  `Comment has insufficient wire context (mtCommandCount=${analysis.mtCommandCount}, preFaultMtCommandCount=${analysis.preFaultMtCommandCount}); skipping.`
+                );
+                return;
+              }
+              const reportMarkdown = (analysis.markdown || '').trim();
+              if (!reportMarkdown) return;
+              const marker = `<!-- zerostack-auto-log-report source:comment-${target.id} -->`;
+              const commentBody = reportMarkdown.startsWith('## ZeroStack Log Analyzer')
+                ? [marker, reportMarkdown].join('\n')
+                : [marker, '## ZeroStack Log Analyzer — Bug Report', '', reportMarkdown].join('\n');
+              await upsertComment(marker, commentBody);
+              await removeDebugLabelsIfPresent();
               return;
             }
 
-            const logPath = '/tmp/extracted.log';
-            fs.writeFileSync(logPath, combined, 'utf8');
-
-            let reportMarkdown = '';
-            try {
-              reportMarkdown = execFileSync(
-                'node',
-                ['.github/scripts/z2m-log-analyzer.mjs', logPath, '--bug-report', '--skip-empty'],
-                { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }
-              ).trim();
-            } finally {
-              try { fs.unlinkSync(logPath); } catch {}
-            }
-
-            if (!reportMarkdown) {
-              core.info('Analyzer produced empty output; skipping.');
+            if (hasSufficientLog) {
+              await removeDebugLabelsIfPresent();
+              if (body.includes('<!-- zerostack-bug-report v1 -->')) {
+                core.info('Issue OP already contains verbatim --bug-report output; skipping duplicate comment.');
+                return;
+              }
+              const reportMarkdown = (analysis.markdown || '').trim();
+              if (!reportMarkdown) return;
+              const marker = `<!-- zerostack-auto-log-report source:issue-${issue.number} -->`;
+              const commentBody = reportMarkdown.startsWith('## ZeroStack Log Analyzer')
+                ? [marker, reportMarkdown].join('\n')
+                : [marker, '## ZeroStack Log Analyzer — Bug Report', '', reportMarkdown].join('\n');
+              await upsertComment(marker, commentBody);
               return;
             }
 
-            const sourceTag = isComment ? `comment-${target.id}` : `issue-${context.payload.issue.number}`;
-            const marker = `<!-- zerostack-auto-log-report source:${sourceTag} -->`;
-            const commentBody = reportMarkdown.startsWith('## ZeroStack Log Analyzer')
-              ? [marker, reportMarkdown].join('\n')
-              : [marker, '## ZeroStack Log Analyzer — Bug Report', '', reportMarkdown].join('\n');
-
-            const comments = await github.paginate(github.rest.issues.listComments, {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.payload.issue.number,
-              per_page: 100,
-            });
-            const existing = comments.find((c) => c.body && c.body.includes(marker));
-
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existing.id,
-                body: commentBody,
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.payload.issue.number,
-                body: commentBody,
-              });
+            if ((isBugReport || analysis.faultsCount > 0) && (analysis.mtCommandCount === 0 || analysis.preFaultMtCommandCount < 5)) {
+              const missingMarker = '<!-- z2m-log-analyzer-missing-context -->';
+              const missingBody = [
+                missingMarker,
+                '### Missing Pre-Error Debug Log',
+                '',
+                `Only **${analysis.preFaultMtCommandCount}** MT/ZNP wire frame(s) were found before the error (**${analysis.mtCommandCount}** total); at least **200 lines of debug log prior to the error** (or logs starting from coordinator startup) are required for root-cause diagnosis.`,
+                '',
+                'Please enable `debug` logging (`advanced: log_level: debug` in Zigbee2MQTT, or **Enable debug logging** in ZHA), reproduce the issue, and attach the `.log`/`.txt` file or paste the scrubbed output from the [Log Analyzer](https://smlight-tech.github.io/zerostack/?mode=bug-report) in a reply below.',
+                '',
+                '#### Copy-Paste Prompt for AI Assistants (Claude / ChatGPT / Cursor)',
+                '```text',
+                'Analyze my full Zigbee2MQTT/ZHA debug log using the official ZeroStack Bug Report Analyzer before replying:',
+                'curl -fsSL https://raw.githubusercontent.com/smlight-tech/zerostack/main/.github/scripts/z2m-log-analyzer.mjs | node - <path-to-z2m-log> --bug-report --require-context',
+                '(Or connect your MCP client to: node .github/scripts/z2m-log-analyzer-mcp.mjs and call prepare_zerostack_bug_report.)',
+                'Paste the resulting <!-- zerostack-bug-report v1 --> block verbatim.',
+                '```',
+              ].join('\n');
+              await upsertComment(missingMarker, missingBody);
+              if (!issueLabels.includes('needs-debug-log') && !issueLabels.includes('needs-debug-logs')) {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  labels: ['needs-debug-log'],
+                });
+              }
+              return;
             }
+
+            core.info('Case 3: Not a bug report and 0 faults / 0 MT commands; skipping comment.');
