@@ -110,7 +110,7 @@ jobs:
             try {
               reportMarkdown = execFileSync(
                 'node',
-                ['.github/scripts/z2m-log-analyzer.mjs', logPath, '--bug-report'],
+                ['.github/scripts/z2m-log-analyzer.mjs', logPath, '--bug-report', '--skip-empty'],
                 { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }
               ).trim();
             } finally {
