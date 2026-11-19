@@ -323,3 +323,108 @@ test('CLI safety rails: lock/log refusal, --dry-run mtime invariance, corrupt JS
     }
   }
 });
+
+test('250-device scale (all 16 shifts), idempotency, K=0/3/4/5 boundaries, colon IEEE & duplicates', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prune-scale-test-'));
+  try {
+    const dbLines = [
+      JSON.stringify({ id: 1, type: 'Coordinator', ieeeAddr: '0x00124b0000000001' }),
+      JSON.stringify({ id: 2, type: 'Group', groupID: 1, friendlyName: 'all_lights' }),
+    ];
+    const devices = [];
+    for (let i = 0; i < 200; i++) {
+      const ieee = `00158d000000${(10 + i).toString(16).padStart(4, '0')}`;
+      dbLines.push(
+        JSON.stringify({
+          id: 10 + i,
+          type: 'Router',
+          ieeeAddr: `0x${ieee}`,
+          friendlyName: `seed_${i}`,
+          endpoints: { '1': { inClusterList: [0, 6] } },
+        })
+      );
+      devices.push({
+        nwk_address: (0x1000 + 10 + i).toString(16).padStart(4, '0'),
+        ieee_address: ieee,
+        is_child: false,
+        link_key: { key: deriveTclkHex(SEED_HEX, ieee, i % 16), rx_counter: 42 + i, tx_counter: 100 + i },
+      });
+    }
+    for (let i = 0; i < 30; i++) {
+      devices.push({
+        nwk_address: (0x2000 + i).toString(16).padStart(4, '0'),
+        ieee_address: `00158d00dead${i.toString(16).padStart(4, '0')}`,
+        is_child: true,
+        link_key: { key: `aa${i.toString(16).padStart(2, '0')}`.repeat(8), rx_counter: 1, tx_counter: 2 },
+      });
+    }
+    for (let i = 0; i < 12; i++) {
+      const ieee = `00158d000000${(400 + i).toString(16).padStart(4, '0')}`;
+      const isPri = i < 4;
+      dbLines.push(
+        JSON.stringify({
+          id: 400 + i,
+          type: 'EndDevice',
+          ieeeAddr: `0x${ieee}`,
+          friendlyName: `exp_${i}`,
+          endpoints: isPri ? { '1': { inClusterList: [0], clusters: { ssIasZone: {} } } } : { '1': { inClusterList: [0, 6] } },
+        })
+      );
+      devices.push({
+        nwk_address: (0x3000 + i).toString(16).padStart(4, '0'),
+        ieee_address: ieee,
+        is_child: true,
+        link_key: { key: i < 8 ? ALLIANCE_HEX : `${10 + i}`.repeat(16), rx_counter: 5, tx_counter: 9 },
+      });
+    }
+    for (let i = 0; i < 8; i++) {
+      const ieee = `00158d000000${(500 + i).toString(16).padStart(4, '0')}`;
+      dbLines.push(JSON.stringify({ id: 500 + i, type: 'Router', ieeeAddr: `0x${ieee}`, friendlyName: `keyless_${i}` }));
+      devices.push({ nwk_address: (0x4000 + i).toString(16).padStart(4, '0'), ieee_address: ieee, is_child: false });
+    }
+
+    fs.writeFileSync(path.join(dir, 'database.db'), `${dbLines.join('\n')}\n`, 'utf8');
+    fs.writeFileSync(
+      path.join(dir, 'coordinator_backup.json'),
+      JSON.stringify({ coordinator_ieee: '00124b0000000001', stack_specific: { zstack: { tclk_seed: SEED_HEX } }, devices }),
+      'utf8'
+    );
+
+    const pass1 = pruneZ2mBackup(dir, { dryRun: false, fitStockZstack: true, nowMs: 1700000005000 });
+    assert.equal(pass1.orphanedRemoved, 30);
+    assert.equal(pass1.totalRemaining, 220);
+    assert.equal(pass1.seedDerivedCount, 208);
+    assert.equal(pass1.explicitKeyCount, 12);
+    assert.equal(pass1.strippedDevices.length, 9);
+
+    const onceBytes = fs.readFileSync(path.join(dir, 'coordinator_backup.json'), 'utf8');
+    const pass2 = pruneZ2mBackup(dir, { dryRun: false, fitStockZstack: true, nowMs: 1700000006000 });
+    assert.equal(pass2.orphanedRemoved, 0);
+    assert.equal(pass2.strippedDevices.length, 0);
+    assert.equal(fs.readFileSync(path.join(dir, 'coordinator_backup.json'), 'utf8'), onceBytes);
+
+    // Boundary K=3 (0 stripped) and colon/coord/duplicate deduplication
+    const wildPath = path.join(dir, 'wild.json');
+    fs.writeFileSync(
+      wildPath,
+      JSON.stringify({
+        coordinator_ieee: '00124b0000000001',
+        stack_specific: { zstack: { tclk_seed: SEED_HEX } },
+        devices: [
+          { nwk_address: '0000', ieee_address: '00:12:4b:00:00:00:00:01', link_key: { key: 'aa'.repeat(16), rx_counter: 0, tx_counter: 1 } },
+          { nwk_address: '2222', ieee_address: '00:15:8d:00:01:23:45:67', link_key: { key: 'bb'.repeat(16), rx_counter: 0, tx_counter: 1 } },
+          { nwk_address: '2222', ieee_address: '00158d0001234567', link_key: { key: 'bb'.repeat(16), rx_counter: 0, tx_counter: 1 } },
+          { nwk_address: '3333', ieee_address: '00158d0001234568', link_key: { key: 'cc'.repeat(16), rx_counter: 0, tx_counter: 1 } },
+          { nwk_address: '4444', ieee_address: '00158d0001234569', link_key: { key: 'dd'.repeat(16), rx_counter: 0, tx_counter: 1 } },
+        ],
+      }),
+      'utf8'
+    );
+    const wildRes = pruneZ2mBackup(wildPath, { dryRun: false, fitStockZstack: true, nowMs: 1700000007000 });
+    assert.equal(wildRes.totalRemaining, 3);
+    assert.equal(wildRes.explicitKeyCount, 3);
+    assert.equal(wildRes.strippedDevices.length, 0);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

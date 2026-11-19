@@ -197,18 +197,28 @@ export function pruneZ2mBackup(targetPath, options = {}) {
   const activeDb = orphanPruningEnabled ? parseDatabaseDb(fs.readFileSync(dbPath, 'utf8')) : new Map();
   const backup = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
   const tclkSeed = backup?.stack_specific?.zstack?.tclk_seed ?? '';
+  const coordIeee = normalizeIeee(backup?.coordinator_ieee);
   const origDevices = Array.isArray(backup.devices) ? backup.devices : [];
 
   const keptDevices = [];
   const orphanedDevices = [];
+  const seenIeees = new Set();
   let normalizedNwkCount = 0;
 
   for (const dev of origDevices) {
     const ieee = normalizeIeee(dev?.ieee_address);
-    if (orphanPruningEnabled && (!ieee || !activeDb.has(ieee))) {
-      orphanedDevices.push(ieee || 'unknown');
+    if (!ieee || (coordIeee && ieee === coordIeee)) {
+      if (orphanPruningEnabled) orphanedDevices.push(ieee || 'unknown');
       continue;
     }
+    if (orphanPruningEnabled && !activeDb.has(ieee)) {
+      orphanedDevices.push(ieee);
+      continue;
+    }
+    if (seenIeees.has(ieee)) {
+      continue;
+    }
+    seenIeees.add(ieee);
     const copy = structuredClone(dev);
     if (
       Object.prototype.hasOwnProperty.call(copy, 'network_address') &&
@@ -221,6 +231,9 @@ export function pruneZ2mBackup(targetPath, options = {}) {
     if (normNwk !== copy.nwk_address) {
       copy.nwk_address = normNwk;
       normalizedNwkCount += 1;
+    }
+    if (copy.link_key === null || copy.link_key === undefined) {
+      delete copy.link_key;
     }
     keptDevices.push(copy);
   }
