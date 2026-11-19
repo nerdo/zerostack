@@ -4,7 +4,7 @@ on:
   issues:
     types: [opened, edited]
   issue_comment:
-    types: [created]
+    types: [created, edited]
 
 permissions:
   issues: write
@@ -14,6 +14,7 @@ jobs:
   triage-logs:
     runs-on: ubuntu-latest
     if: >-
+      !github.event.issue.pull_request &&
       github.event.sender.type != 'Bot' &&
       !contains(github.event.comment.body || github.event.issue.body || '', '## ZeroStack Log Analyzer — Bug Report') &&
       !contains(github.event.comment.body || github.event.issue.body || '', '<!-- zerostack-auto-log-report')
@@ -35,6 +36,19 @@ jobs:
 
             const isComment = Boolean(context.payload.comment);
             const issue = context.payload.issue;
+            if (issue?.pull_request) return;
+
+            if (isComment) {
+              const assoc = context.payload.comment?.author_association || '';
+              const isAuthorized =
+                context.payload.comment?.user?.id === issue?.user?.id ||
+                ['OWNER', 'MEMBER', 'COLLABORATOR'].includes(assoc);
+              if (!isAuthorized) {
+                core.info(`Unauthorized commenter (${assoc}); skipping triage.`);
+                return;
+              }
+            }
+
             const target = isComment ? context.payload.comment : issue;
             const body = (target && target.body) || '';
             if (!body.trim()) return;
@@ -48,9 +62,98 @@ jobs:
               return;
             }
 
+            const stripQuotedAndInlineCode = (text) =>
+              text
+                .replace(/^>\s?.*$/gm, '')
+                .replace(/(?<!`)`(?!`)[^`\n]+`(?!`)/g, '');
+
+            const hasValidRenderedBugReport = (text) => {
+              const unquoted = stripQuotedAndInlineCode(text);
+              return (
+                unquoted.includes('<!-- zerostack-bug-report v1 -->') &&
+                !unquoted.includes('INCOMPLETE LOG WINDOW') &&
+                (/\|\s*Host stack\s*\|/i.test(unquoted) || /\|\s*Coordinator firmware/i.test(unquoted)) &&
+                /(?:-->|<--)\s+(?:SREQ|SRSP|AREQ)\b/.test(unquoted)
+              );
+            };
+
             const issueLabels = Array.isArray(issue?.labels)
               ? issue.labels.map((l) => (typeof l === 'string' ? l : l?.name || '').toLowerCase()).filter(Boolean)
               : [];
+
+            const STACK_LABEL_META = {
+              z2m: { color: 'FFC107', description: 'Zigbee2MQTT / zigbee-herdsman / zs-herdsman' },
+              zha: { color: '03A9F4', description: 'Home Assistant ZHA / zigpy / zigpy-znp / bellows' },
+              ot: { color: '009688', description: 'OpenThread / OTBR / Spinel / Thread / Matter' },
+            };
+
+            const extractHostStackSections = (text, allowFreeText) => {
+              const unquoted = stripQuotedAndInlineCode(text);
+              const parts = [];
+              const tableMatch = unquoted.match(/\|\s*Host stack\s*\|\s*([^|\n]+)\|/i);
+              if (tableMatch) parts.push(tableMatch[1]);
+              if (!isComment) {
+                const formMatch = unquoted.match(/###\s+Host stack and version\s*\n+([\s\S]*?)(?:\n###\s+|\n*$)/i);
+                if (formMatch) parts.push(formMatch[1]);
+              }
+              if (parts.length > 0) return parts.join('\n');
+              return allowFreeText ? unquoted : '';
+            };
+
+            const detectHostStackLabels = (text, allowFreeText) => {
+              const targetText = extractHostStackSections(text, allowFreeText);
+              if (!targetText.trim()) return [];
+              const detected = [];
+              if (/\b(?:Zigbee2MQTT|z2m|zigbee-herdsman|zs-herdsman)\b/i.test(targetText)) detected.push('z2m');
+              if (/\b(?:ZHA|zigpy|zigpy-znp|bellows)\b|\bHome Assistant\s+ZHA\b/i.test(targetText)) detected.push('zha');
+              if (/\b(?:OpenThread|OTBR|Spinel|cpcd|Thread\s+RCP|Matter\s+over\s+Thread)\b/i.test(targetText)) detected.push('ot');
+              return detected;
+            };
+
+            const ensureAndAddStackLabels = async (text, allowFreeText) => {
+              const wanted = detectHostStackLabels(text, allowFreeText).filter((lbl) => !issueLabels.includes(lbl));
+              if (wanted.length === 0) return;
+              for (const lbl of wanted) {
+                try {
+                  await github.rest.issues.getLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    name: lbl,
+                  });
+                } catch (err) {
+                  if (err && err.status === 404) {
+                    try {
+                      await github.rest.issues.createLabel({
+                        owner: context.repo.owner,
+                        repo: context.repo.repo,
+                        name: lbl,
+                        color: STACK_LABEL_META[lbl].color,
+                        description: STACK_LABEL_META[lbl].description,
+                      });
+                    } catch (createErr) {
+                      if (!createErr || createErr.status !== 422) {
+                        core.warning(`Could not create label ${lbl}: ${createErr && createErr.message ? createErr.message : String(createErr)}`);
+                      }
+                    }
+                  }
+                }
+              }
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: wanted,
+              });
+              issueLabels.push(...wanted);
+            };
+
+            const bodyHasValidBugReport = hasValidRenderedBugReport(body);
+            if (!isComment) {
+              await ensureAndAddStackLabels(body, true);
+            } else if (bodyHasValidBugReport) {
+              await ensureAndAddStackLabels(body, false);
+            }
+
             const hasBugLabel = issueLabels.includes('bug');
             const hasTemplateHeadings =
               /###\s+(?:Coordinator hardware model|Log Analyzer Bug Report output|Steps to reproduce)/i.test(body);
@@ -178,6 +281,11 @@ jobs:
             };
 
             if (isComment) {
+              if (bodyHasValidBugReport) {
+                await removeDebugLabelsIfPresent();
+                core.info('Comment contains valid --bug-report output; cleared debug labels and skipped duplicate report.');
+                return;
+              }
               if (!hasSufficientLog) {
                 core.info(
                   `Comment has insufficient wire context (mtCommandCount=${analysis.mtCommandCount}, preFaultMtCommandCount=${analysis.preFaultMtCommandCount}); skipping.`
@@ -195,10 +303,10 @@ jobs:
               return;
             }
 
-            if (hasSufficientLog) {
+            if (hasSufficientLog || bodyHasValidBugReport) {
               await removeDebugLabelsIfPresent();
-              if (body.includes('<!-- zerostack-bug-report v1 -->')) {
-                core.info('Issue OP already contains verbatim --bug-report output; skipping duplicate comment.');
+              if (bodyHasValidBugReport || body.includes('<!-- zerostack-bug-report v1 -->')) {
+                core.info('Issue OP already contains valid --bug-report output; skipping duplicate comment.');
                 return;
               }
               const reportMarkdown = (analysis.markdown || '').trim();
