@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import {
   isSeedDerivedLinkKey,
   normalizeNwkAddress,
@@ -235,5 +237,89 @@ test('standalone ZHA backup .json file skips database.db pruning and runs --fit-
     assert.equal(updated.devices[3].link_key, undefined);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('CLI safety rails: lock/log refusal, --dry-run mtime invariance, corrupt JSON & ZHA filename with spaces', () => {
+  const cliPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'prune-z2m-backup.mjs');
+
+  // 1. Active *.lock and recent log.txt refusal via CLI, allowed under --dry-run and --force
+  for (const markerFile of ['custom.lock', 'log.txt']) {
+    const dir = makeFixtureDir();
+    try {
+      const backupFile = path.join(dir, 'coordinator_backup.json');
+      const beforeBytes = fs.readFileSync(backupFile, 'utf8');
+      fs.writeFileSync(path.join(dir, markerFile), 'active\n', 'utf8');
+
+      const blocked = spawnSync(process.execPath, [cliPath, dir], { encoding: 'utf8' });
+      assert.notEqual(blocked.status, 0);
+      assert.equal(fs.readFileSync(backupFile, 'utf8'), beforeBytes);
+
+      const dry = spawnSync(process.execPath, [cliPath, dir, '--dry-run'], { encoding: 'utf8' });
+      assert.equal(dry.status, 0);
+      assert.equal(fs.readFileSync(backupFile, 'utf8'), beforeBytes);
+      assert.equal(fs.readdirSync(dir).some((f) => f.includes('.bak.') || f.includes('.tmp.')), false);
+
+      const forced = spawnSync(process.execPath, [cliPath, dir, '--force'], { encoding: 'utf8' });
+      assert.equal(forced.status, 0);
+      assert.equal(fs.readdirSync(dir).some((f) => f.startsWith('coordinator_backup.json.bak.')), true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  // 2. --dry-run invariance (mtimeMs & zero .bak/.tmp)
+  {
+    const dir = makeFixtureDir();
+    try {
+      const backupFile = path.join(dir, 'coordinator_backup.json');
+      const beforeStat = fs.statSync(backupFile);
+      const dry = spawnSync(process.execPath, [cliPath, dir, '--dry-run', '--fit-stock-zstack'], { encoding: 'utf8' });
+      assert.equal(dry.status, 0);
+      assert.equal(fs.statSync(backupFile).mtimeMs, beforeStat.mtimeMs);
+      assert.equal(fs.readdirSync(dir).some((f) => f.includes('.bak.') || f.includes('.tmp.')), false);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  // 3. Corrupt JSON input: non-zero exit & zero .bak/.tmp leftovers
+  {
+    const dir = makeFixtureDir();
+    try {
+      fs.writeFileSync(path.join(dir, 'coordinator_backup.json'), '{corrupt json', 'utf8');
+      const bad = spawnSync(process.execPath, [cliPath, dir], { encoding: 'utf8' });
+      assert.notEqual(bad.status, 0);
+      assert.equal(fs.readdirSync(dir).some((f) => f.includes('.bak.') || f.includes('.tmp.')), false);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  // 4. Filename with spaces in standalone ZHA mode + log.txt in parent dir does not block
+  {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prune-zha-spaces-'));
+    try {
+      const zhaPath = path.join(dir, 'ZHA backup 2026-11-19.json');
+      fs.writeFileSync(path.join(dir, 'log.txt'), 'recent\n', 'utf8');
+      fs.writeFileSync(
+        zhaPath,
+        JSON.stringify({
+          coordinator_ieee: '00124b0000000001',
+          stack_specific: { zstack: { tclk_seed: SEED_HEX } },
+          devices: [
+            { nwk_address: 'ffff', ieee_address: '00158d0000000002', link_key: { key: '11'.repeat(16), rx_counter: 0, tx_counter: 1 } },
+          ],
+        }),
+        'utf8'
+      );
+      const res = spawnSync(process.execPath, [cliPath, zhaPath], { encoding: 'utf8' });
+      assert.equal(res.status, 0, res.stderr);
+      assert.equal(fs.readdirSync(dir).some((f) => f.startsWith('ZHA backup 2026-11-19.json.bak.')), true);
+      const updated = JSON.parse(fs.readFileSync(zhaPath, 'utf8'));
+      assert.equal(updated.devices[0].nwk_address, null);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   }
 });

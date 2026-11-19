@@ -133,20 +133,28 @@ export function parseDatabaseDb(dbContent) {
  */
 export function checkZ2mRunningSignals(dataDir, nowMs = Date.now()) {
   const warnings = [];
-  for (const name of ['z2m.pid', 'zigbee2mqtt.pid', 'database.db.lock', 'coordinator_backup.json.lock']) {
-    if (fs.existsSync(path.join(dataDir, name))) {
-      warnings.push(`Found active lock/pid file: ${name}`);
+  for (const entry of fs.readdirSync(dataDir, { withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    if (entry.name === 'z2m.pid' || entry.name === 'zigbee2mqtt.pid' || entry.name.endsWith('.lock')) {
+      warnings.push(`Found active lock/pid file: ${entry.name}`);
+    } else if (entry.name === 'log.txt' || entry.name === 'log.log') {
+      const ageMs = nowMs - fs.statSync(path.join(dataDir, entry.name)).mtimeMs;
+      if (ageMs >= 0 && ageMs < 10_000) {
+        warnings.push(`Recent log activity (${Math.round(ageMs / 1000)}s ago): ${entry.name}`);
+      }
     }
   }
   const logDir = path.join(dataDir, 'log');
   if (fs.existsSync(logDir) && fs.statSync(logDir).isDirectory()) {
     for (const entry of fs.readdirSync(logDir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
-      const logFile = path.join(logDir, entry.name, 'log.log');
-      if (fs.existsSync(logFile)) {
-        const ageMs = nowMs - fs.statSync(logFile).mtimeMs;
-        if (ageMs >= 0 && ageMs < 10_000) {
-          warnings.push(`Recent log activity (${Math.round(ageMs / 1000)}s ago): ${logFile}`);
+      for (const logName of ['log.log', 'log.txt']) {
+        const logFile = path.join(logDir, entry.name, logName);
+        if (fs.existsSync(logFile)) {
+          const ageMs = nowMs - fs.statSync(logFile).mtimeMs;
+          if (ageMs >= 0 && ageMs < 10_000) {
+            warnings.push(`Recent log activity (${Math.round(ageMs / 1000)}s ago): ${logFile}`);
+          }
         }
       }
     }
