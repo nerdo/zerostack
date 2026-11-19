@@ -157,29 +157,36 @@ export function checkZ2mRunningSignals(dataDir, nowMs = Date.now()) {
 /**
  * Prune orphaned devices and optionally fit explicit link keys to Stock TI Z-Stack's 3-slot limit.
  */
-export function pruneZ2mBackup(dataDir, options = {}) {
+export function pruneZ2mBackup(targetPath, options = {}) {
   const dryRun = Boolean(options.dryRun);
   const fitStockZstack = Boolean(options.fitStockZstack);
   const force = Boolean(options.force);
   const nowMs = options.nowMs ?? Date.now();
 
-  const dbPath = path.join(dataDir, 'database.db');
-  const backupPath = path.join(dataDir, 'coordinator_backup.json');
-  if (!fs.existsSync(dbPath)) {
+  if (!fs.existsSync(targetPath)) {
+    throw new Error(`Path not found: ${targetPath}`);
+  }
+  const isFileMode = fs.statSync(targetPath).isFile();
+  const dataDir = isFileMode ? path.dirname(targetPath) : targetPath;
+  const backupPath = isFileMode ? targetPath : path.join(dataDir, 'coordinator_backup.json');
+  const dbPath = isFileMode ? null : path.join(dataDir, 'database.db');
+
+  if (!isFileMode && !fs.existsSync(dbPath)) {
     throw new Error(`Missing database.db in ${dataDir}`);
   }
   if (!fs.existsSync(backupPath)) {
-    throw new Error(`Missing coordinator_backup.json in ${dataDir}`);
+    throw new Error(`Missing backup JSON file: ${backupPath}`);
   }
 
-  const runningSignals = checkZ2mRunningSignals(dataDir, nowMs);
+  const runningSignals = isFileMode ? [] : checkZ2mRunningSignals(dataDir, nowMs);
   if (runningSignals.length > 0 && !dryRun && !force) {
     throw new Error(
       `Refusing to modify coordinator_backup.json while Zigbee2MQTT appears active (${runningSignals.join('; ')}). Stop Zigbee2MQTT first or pass --force.`
     );
   }
 
-  const activeDb = parseDatabaseDb(fs.readFileSync(dbPath, 'utf8'));
+  const orphanPruningEnabled = !isFileMode;
+  const activeDb = orphanPruningEnabled ? parseDatabaseDb(fs.readFileSync(dbPath, 'utf8')) : new Map();
   const backup = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
   const tclkSeed = backup?.stack_specific?.zstack?.tclk_seed ?? '';
   const origDevices = Array.isArray(backup.devices) ? backup.devices : [];
@@ -190,7 +197,7 @@ export function pruneZ2mBackup(dataDir, options = {}) {
 
   for (const dev of origDevices) {
     const ieee = normalizeIeee(dev?.ieee_address);
-    if (!ieee || !activeDb.has(ieee)) {
+    if (orphanPruningEnabled && (!ieee || !activeDb.has(ieee))) {
       orphanedDevices.push(ieee || 'unknown');
       continue;
     }
@@ -250,15 +257,17 @@ export function pruneZ2mBackup(dataDir, options = {}) {
   let bakPath = null;
   if (!dryRun) {
     const stamp = new Date(nowMs).toISOString().replace(/[:.]/g, '-');
-    bakPath = path.join(dataDir, `coordinator_backup.json.bak.${stamp}`);
+    bakPath = `${backupPath}.bak.${stamp}`;
     fs.copyFileSync(backupPath, bakPath);
-    const tmpPath = path.join(dataDir, `.coordinator_backup.json.tmp.${process.pid}`);
+    const tmpPath = path.join(path.dirname(backupPath), `.${path.basename(backupPath)}.tmp.${process.pid}`);
     fs.writeFileSync(tmpPath, `${JSON.stringify(backup, null, 2)}\n`, 'utf8');
     fs.renameSync(tmpPath, backupPath);
   }
 
   return {
     dryRun,
+    isFileMode,
+    orphanPruningEnabled,
     fitStockZstack,
     runningSignals,
     totalOriginal: origDevices.length,

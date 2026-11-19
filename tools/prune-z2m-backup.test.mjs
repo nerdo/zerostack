@@ -200,3 +200,40 @@ test('refuses to write when active z2m.pid exists unless --force', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('standalone ZHA backup .json file skips database.db pruning and runs --fit-stock-zstack', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prune-zha-test-'));
+  try {
+    const zhaPath = path.join(dir, 'zha_backup.json');
+    const zhaBackup = {
+      coordinator_ieee: '00124b0000000001',
+      stack_specific: { zstack: { tclk_seed: SEED_HEX } },
+      devices: [
+        { nwk_address: 'ffff', ieee_address: '00158d0000000002', link_key: { key: '11111111111111111111111111111111', rx_counter: 0, tx_counter: 1 } },
+        { nwk_address: '0000', ieee_address: '00158d0000000003', link_key: { key: '22222222222222222222222222222222', rx_counter: 0, tx_counter: 1 } },
+        { nwk_address: '3333', ieee_address: '00158d0000000004', link_key: { key: '33333333333333333333333333333333', rx_counter: 0, tx_counter: 1 } },
+        { nwk_address: '4444', ieee_address: '00158d0000000005', link_key: { key: ALLIANCE_HEX, rx_counter: 0, tx_counter: 1 } },
+        { nwk_address: '5555', ieee_address: '00158d0000000006', link_key: { key: GOLDEN_SHIFT7_KEY, rx_counter: 0, tx_counter: 1 } },
+      ],
+    };
+    fs.writeFileSync(zhaPath, JSON.stringify(zhaBackup, null, 2), 'utf8');
+
+    const res = pruneZ2mBackup(zhaPath, { dryRun: false, fitStockZstack: true, nowMs: 1700000002000 });
+    assert.equal(res.isFileMode, true);
+    assert.equal(res.orphanPruningEnabled, false);
+    assert.equal(res.orphanedRemoved, 0);
+    assert.equal(res.totalRemaining, 5);
+    assert.equal(res.normalizedNwkCount, 2);
+    assert.equal(res.seedDerivedCount, 1);
+    assert.equal(res.explicitKeyCount, 4);
+    assert.equal(res.strippedDevices.length, 1);
+    assert.ok(res.bakPath && res.bakPath.startsWith(`${zhaPath}.bak.`) && fs.existsSync(res.bakPath));
+
+    const updated = JSON.parse(fs.readFileSync(zhaPath, 'utf8'));
+    assert.equal(updated.devices[0].nwk_address, null);
+    assert.equal(updated.devices[1].nwk_address, null);
+    assert.equal(updated.devices[3].link_key, undefined);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
